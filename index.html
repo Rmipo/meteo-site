@@ -1,49 +1,25 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8">
-  <title>Station météo locale</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #0f172a;
-      color: white;
-      text-align: center;
-      padding: 40px;
-    }
-    .box {
-      background: #1e293b;
-      padding: 20px;
-      border-radius: 10px;
-      width: 300px;
-      margin: auto;
-    }
-    .value {
-      font-size: 2em;
-      margin: 10px 0;
-    }
-  </style>
-</head>
-<body>
-
-  <h1>🌦️ Station météo</h1>
-
-  <div class="box">
-    <div>🌡️ Température</div>
-    <div class="value" id="temp">-- °C</div>
-
-    <div>💧 Humidité</div>
-    <div class="value" id="hum">-- %</div>
-
-    <div>⏲️ Pression</div>
-    <div class="value" id="pres">-- hPa</div>
-
-    <p id="status">Chargement...</p>
-  </div>
-
 <script>
-  // on ajoutera le JavaScript ici juste après
-</script>
+const url = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
 
-</body>
-</html>
+async function loadData() {
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+
+    console.log("DONNÉES REÇUES :", data);
+
+    document.getElementById("temp").textContent = data.temperature + " °C";
+    document.getElementById("hum").textContent = data.humidity + " %";
+    document.getElementById("pres").textContent = data.pressure + " hPa";
+
+    document.getElementById("status").textContent =
+      "Dernière mise à jour : " + new Date().toLocaleTimeString();
+
+  } catch (err) {
+    console.error("ERREUR FETCH :", err);
+  }
+}
+
+loadData();
+setInterval(loadData, 10000);
+</script>
