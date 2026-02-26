@@ -66,7 +66,6 @@ h2 { margin-top: 60px; }
   height: 100%;
   width: 0%;
   background: linear-gradient(90deg, #22c55e, #eab308, #ef4444);
-  transition: width 0.5s;
 }
 
 canvas {
@@ -92,7 +91,7 @@ th, td {
 
 <body>
 
-<h1>🌦️ Station météo locale</h1>
+<h1>🌦️ Station météo</h1>
 
 <div class="meteo-box">
   <div class="big-value" id="temp">---</div>
@@ -131,6 +130,8 @@ th, td {
 <script>
 const url = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
 
+let chart24h, chart7j;
+
 async function loadData(){
   const res = await fetch(url);
   const raw = await res.json();
@@ -146,52 +147,74 @@ async function loadData(){
   document.getElementById("status").textContent =
     "Dernière mise à jour aujourd’hui : " + new Date(last.timestamp).toLocaleString();
 
-  // --- ANALYSE MÉTÉO ---
+  // --- ANALYSE ---
   const dP = prev.pressure - last.pressure;
-  const H = last.humidity;
-  const T = last.temperature;
-
-  let score = dP * 40 + H * 0.3 + (T > 20 ? 10 : 0);
-  score = Math.max(0, Math.min(100, score));
+  const score = Math.min(100, Math.max(0, dP * 40 + last.humidity * 0.3));
   document.getElementById("intensityBar").style.width = score + "%";
 
-  let icon = "☀️";
-  let text = "Beau temps stable";
+  let icon="☀️", text="Beau temps stable";
+  if(score>80){icon="🌩️";text="Orage intense possible";}
+  else if(score>60){icon="⛈️";text="Orage probable";}
+  else if(score>40){icon="🌧️";text="Pluie possible";}
+  else if(score>25){icon="🌤️";text="Instabilité légère";}
+  document.getElementById("icon").textContent=icon;
+  document.getElementById("alert").textContent=text;
 
-  if (score > 80) {
-    icon = "🌩️";
-    text = "Orage intense possible";
-  } else if (score > 60) {
-    icon = "⛈️";
-    text = "Orage probable";
-  } else if (score > 40) {
-    icon = "🌧️";
-    text = "Pluie possible";
-  } else if (score > 25) {
-    icon = "🌤️";
-    text = "Nuages et instabilité";
-  }
-
-  document.getElementById("icon").textContent = icon;
-  document.getElementById("alert").textContent = text;
-
-  // HISTORIQUE
+  // --- TABLE ---
   const tbody = document.getElementById("tableBody");
-  tbody.innerHTML = "";
+  tbody.innerHTML="";
   data.slice(-50).reverse().forEach(d=>{
-    const dt = new Date(d.timestamp);
-    tbody.innerHTML += `
-      <tr>
-        <td>${dt.toLocaleDateString("fr-FR",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})}</td>
-        <td>${d.temperature}</td>
-        <td>${d.humidity}</td>
-        <td>${d.pressure}</td>
-      </tr>`;
+    const dt=new Date(d.timestamp);
+    tbody.innerHTML+=`
+    <tr>
+      <td>${dt.toLocaleDateString("fr-FR",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})}</td>
+      <td>${d.temperature}</td>
+      <td>${d.humidity}</td>
+      <td>${d.pressure}</td>
+    </tr>`;
+  });
+
+  // --- GRAPH 24H ---
+  const last24h = data.slice(-144);
+  const labels24h = last24h.map(d=>new Date(d.timestamp).toLocaleTimeString());
+  const temp24h = last24h.map(d=>d.temperature);
+
+  if(chart24h) chart24h.destroy();
+  chart24h = new Chart(document.getElementById("chart24h"), {
+    type:"line",
+    data:{
+      labels:labels24h,
+      datasets:[{
+        label:"Température (°C)",
+        data:temp24h,
+        borderColor:"#38bdf8",
+        tension:0.3
+      }]
+    }
+  });
+
+  // --- GRAPH 7J ---
+  const last7j = data.slice(-1000);
+  const labels7j = last7j.map(d=>new Date(d.timestamp).toLocaleDateString());
+  const temp7j = last7j.map(d=>d.temperature);
+
+  if(chart7j) chart7j.destroy();
+  chart7j = new Chart(document.getElementById("chart7j"), {
+    type:"line",
+    data:{
+      labels:labels7j,
+      datasets:[{
+        label:"Température (°C)",
+        data:temp7j,
+        borderColor:"#facc15",
+        tension:0.3
+      }]
+    }
   });
 }
 
 loadData();
-setInterval(loadData, 60000);
+setInterval(loadData,60000);
 </script>
 
 </body>
