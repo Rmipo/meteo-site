@@ -1,49 +1,53 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <title>Station météo locale</title>
+<meta charset="UTF-8">
+<title>Station météo</title>
 
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #0f172a;
-      color: white;
-      text-align: center;
-      padding: 40px;
-    }
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #0f172a;
+  color: white;
+  text-align: center;
+  padding: 30px;
+}
 
-    h1 {
-      margin-bottom: 30px;
-    }
+h1, h2 {
+  margin: 20px 0;
+}
 
-    .box {
-      background: #1e293b;
-      padding: 20px;
-      border-radius: 12px;
-      width: 320px;
-      margin: auto;
-      margin-bottom: 30px;
-    }
+.box {
+  background: #1e293b;
+  padding: 20px;
+  border-radius: 12px;
+  width: 320px;
+  margin: auto;
+}
 
-    .label {
-      font-size: 0.9em;
-      opacity: 0.8;
-    }
+.value {
+  font-size: 2em;
+  margin-bottom: 10px;
+}
 
-    .value {
-      font-size: 2em;
-      margin-bottom: 15px;
-    }
+canvas {
+  max-width: 800px;
+  margin: 30px auto;
+}
 
-    canvas {
-      max-width: 600px;
-      margin: auto;
-    }
-  </style>
+table {
+  width: 90%;
+  margin: auto;
+  border-collapse: collapse;
+}
+
+th, td {
+  padding: 8px;
+  border-bottom: 1px solid #334155;
+}
+</style>
 </head>
 
 <body>
@@ -51,84 +55,119 @@
 <h1>🌦️ Station météo</h1>
 
 <div class="box">
-  <div class="label">🌡️ Température</div>
   <div class="value" id="temp">---</div>
-
-  <div class="label">💧 Humidité</div>
-  <div class="value" id="hum">---</div>
-
-  <div class="label">⏲️ Pression</div>
-  <div class="value" id="pres">---</div>
-
+  <div id="hum">---</div>
+  <div id="pres">---</div>
   <p id="status">Chargement...</p>
 </div>
 
-<canvas id="tempChart"></canvas>
+<h2>📈 Température – 24 dernières heures</h2>
+<canvas id="chart24h"></canvas>
+
+<h2>📊 Température – 7 derniers jours</h2>
+<canvas id="chart7j"></canvas>
+
+<h2>📋 Historique détaillé</h2>
+<table>
+<thead>
+<tr>
+<th>Date</th>
+<th>Température (°C)</th>
+<th>Humidité (%)</th>
+<th>Pression (hPa)</th>
+</tr>
+</thead>
+<tbody id="tableBody"></tbody>
+</table>
 
 <script>
 const url = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
 
-let chart = null;
+let chart24h = null;
+let chart7j = null;
 
-async function loadData() {
-  try {
-    const response = await fetch(url);
-    const data = await response.json();
+const jours = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"];
 
-    // dernière mesure
-    const last = data[data.length - 1];
-
-    document.getElementById("temp").textContent = last.temperature + " °C";
-    document.getElementById("hum").textContent = last.humidity + " %";
-    document.getElementById("pres").textContent = last.pressure + " hPa";
-
-    document.getElementById("status").textContent =
-      "Dernière mise à jour : " + new Date(last.timestamp).toLocaleTimeString();
-
-    // données graphique
-    const labels = data.map(d =>
-      new Date(d.timestamp).toLocaleTimeString()
-    );
-
-    const temperatures = data.map(d => d.temperature);
-
-    if (!chart) {
-      const ctx = document.getElementById("tempChart").getContext("2d");
-      chart = new Chart(ctx, {
-        type: "line",
-        data: {
-          labels: labels,
-          datasets: [{
-            label: "Température (°C)",
-            data: temperatures,
-            borderWidth: 2,
-            tension: 0.3
-          }]
-        },
-        options: {
-          responsive: true,
-          scales: {
-            y: {
-              beginAtZero: false
-            }
-          }
-        }
-      });
-    } else {
-      chart.data.labels = labels;
-      chart.data.datasets[0].data = temperatures;
-      chart.update();
-    }
-
-  } catch (err) {
-    console.error("Erreur chargement données :", err);
-    document.getElementById("status").textContent = "Erreur de connexion";
-  }
+function formatDate(date) {
+  return `${jours[date.getDay()]} ${date.getDate().toString().padStart(2,"0")}/` +
+         `${(date.getMonth()+1).toString().padStart(2,"0")}/${date.getFullYear()}`;
 }
 
-// première charge + rafraîchissement auto
+async function loadData() {
+  const res = await fetch(url);
+  const data = await res.json();
+
+  const now = new Date();
+
+  // dernière valeur
+  const last = data[data.length - 1];
+  document.getElementById("temp").textContent = last.temperature + " °C";
+  document.getElementById("hum").textContent = "💧 " + last.humidity + " %";
+  document.getElementById("pres").textContent = "⏲️ " + last.pressure + " hPa";
+  document.getElementById("status").textContent =
+    "Dernière mise à jour : " + new Date(last.timestamp).toLocaleTimeString();
+
+  // filtrage 24h / 7j
+  const data24h = data.filter(d =>
+    now - new Date(d.timestamp) <= 24 * 60 * 60 * 1000
+  );
+
+  const data7j = data.filter(d =>
+    now - new Date(d.timestamp) <= 7 * 24 * 60 * 60 * 1000
+  );
+
+  // graphique 24h
+  const labels24h = data24h.map(d =>
+    new Date(d.timestamp).toLocaleTimeString()
+  );
+  const temp24h = data24h.map(d => d.temperature);
+
+  if (!chart24h) {
+    chart24h = new Chart(chart24hCanvas.getContext("2d"), {
+      type: "line",
+      data: { labels: labels24h, datasets: [{ label: "°C", data: temp24h }] }
+    });
+  } else {
+    chart24h.data.labels = labels24h;
+    chart24h.data.datasets[0].data = temp24h;
+    chart24h.update();
+  }
+
+  // graphique 7j
+  const labels7j = data7j.map(d =>
+    formatDate(new Date(d.timestamp))
+  );
+  const temp7j = data7j.map(d => d.temperature);
+
+  if (!chart7j) {
+    chart7j = new Chart(chart7jCanvas.getContext("2d"), {
+      type: "line",
+      data: { labels: labels7j, datasets: [{ label: "°C", data: temp7j }] }
+    });
+  } else {
+    chart7j.data.labels = labels7j;
+    chart7j.data.datasets[0].data = temp7j;
+    chart7j.update();
+  }
+
+  // tableau
+  const tbody = document.getElementById("tableBody");
+  tbody.innerHTML = "";
+  data7j.reverse().forEach(d => {
+    const date = new Date(d.timestamp);
+    tbody.innerHTML += `
+      <tr>
+        <td>${formatDate(date)}</td>
+        <td>${d.temperature}</td>
+        <td>${d.humidity}</td>
+        <td>${d.pressure}</td>
+      </tr>
+    `;
+  });
+}
+
 loadData();
-setInterval(loadData, 10000); // 10 secondes
+setInterval(loadData, 60000); // 1 minute
 </script>
 
 </body>
