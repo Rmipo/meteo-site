@@ -9,43 +9,67 @@
 <style>
 body {
   font-family: Arial, sans-serif;
-  background: #0f172a;
+  background: linear-gradient(180deg, #020617, #0f172a);
   color: white;
   text-align: center;
-  padding: 30px;
+  padding: 40px;
 }
 
-h1, h2 {
-  margin: 20px 0;
+h1 {
+  font-size: 2.5em;
+  margin-bottom: 30px;
 }
 
-.box {
+h2 {
+  margin-top: 50px;
+}
+
+.meteo-box {
   background: #1e293b;
-  padding: 20px;
-  border-radius: 12px;
-  width: 320px;
+  padding: 30px;
+  border-radius: 20px;
+  width: 340px;
   margin: auto;
+  box-shadow: 0 0 20px rgba(0,0,0,0.5);
 }
 
-.value {
-  font-size: 2em;
-  margin-bottom: 10px;
+.big-value {
+  font-size: 3em;
+  font-weight: bold;
+}
+
+.sub-value {
+  font-size: 1.4em;
+  margin: 10px 0;
+}
+
+.update {
+  font-size: 0.9em;
+  opacity: 0.8;
+  margin-top: 15px;
 }
 
 canvas {
-  max-width: 800px;
-  margin: 30px auto;
+  max-width: 900px;
+  margin: 40px auto;
 }
 
 table {
   width: 90%;
-  margin: auto;
+  margin: 40px auto;
   border-collapse: collapse;
+  background: #1e293b;
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 th, td {
-  padding: 8px;
+  padding: 10px;
   border-bottom: 1px solid #334155;
+}
+
+th {
+  background: #020617;
 }
 </style>
 </head>
@@ -54,17 +78,17 @@ th, td {
 
 <h1>🌦️ Station météo</h1>
 
-<div class="box">
-  <div class="value" id="temp">---</div>
-  <div id="hum">---</div>
-  <div id="pres">---</div>
-  <p id="status">Chargement...</p>
+<div class="meteo-box">
+  <div class="big-value" id="temp">---</div>
+  <div class="sub-value" id="hum">---</div>
+  <div class="sub-value" id="pres">---</div>
+  <div class="update" id="status">Chargement...</div>
 </div>
 
-<h2>📈 Température – 24 dernières heures</h2>
+<h2>📈 Température — dernières 24h</h2>
 <canvas id="chart24h"></canvas>
 
-<h2>📊 Température – 7 derniers jours</h2>
+<h2>📊 Température — 7 derniers jours</h2>
 <canvas id="chart7j"></canvas>
 
 <h2>📋 Historique détaillé</h2>
@@ -93,39 +117,47 @@ function formatDate(date) {
          `${(date.getMonth()+1).toString().padStart(2,"0")}/${date.getFullYear()}`;
 }
 
+function formatDateTime(date) {
+  return `Dernière mise à jour aujourd’hui : ${date.toLocaleDateString()} à ${date.toLocaleTimeString()}`;
+}
+
 async function loadData() {
   const res = await fetch(url);
-  const data = await res.json();
+  const raw = await res.json();
+  const data = Array.isArray(raw) ? raw : [raw];
+
+  if (data.length === 0) return;
 
   const now = new Date();
-
-  // dernière valeur
   const last = data[data.length - 1];
+  const lastDate = new Date(last.timestamp);
+
+  // affichage principal
   document.getElementById("temp").textContent = last.temperature + " °C";
-  document.getElementById("hum").textContent = "💧 " + last.humidity + " %";
-  document.getElementById("pres").textContent = "⏲️ " + last.pressure + " hPa";
-  document.getElementById("status").textContent =
-    "Dernière mise à jour : " + new Date(last.timestamp).toLocaleTimeString();
+  document.getElementById("hum").textContent = "💧 Humidité : " + last.humidity + " %";
+  document.getElementById("pres").textContent = "⏲️ Pression : " + last.pressure + " hPa";
+  document.getElementById("status").textContent = formatDateTime(lastDate);
 
-  // filtrage 24h / 7j
-  const data24h = data.filter(d =>
-    now - new Date(d.timestamp) <= 24 * 60 * 60 * 1000
-  );
-
-  const data7j = data.filter(d =>
-    now - new Date(d.timestamp) <= 7 * 24 * 60 * 60 * 1000
-  );
+  // filtres
+  const data24h = data.filter(d => now - new Date(d.timestamp) <= 24*60*60*1000);
+  const data7j = data.filter(d => now - new Date(d.timestamp) <= 7*24*60*60*1000);
 
   // graphique 24h
-  const labels24h = data24h.map(d =>
-    new Date(d.timestamp).toLocaleTimeString()
-  );
+  const labels24h = data24h.map(d => new Date(d.timestamp).toLocaleTimeString());
   const temp24h = data24h.map(d => d.temperature);
 
   if (!chart24h) {
-    chart24h = new Chart(chart24hCanvas.getContext("2d"), {
+    chart24h = new Chart(document.getElementById("chart24h"), {
       type: "line",
-      data: { labels: labels24h, datasets: [{ label: "°C", data: temp24h }] }
+      data: {
+        labels: labels24h,
+        datasets: [{
+          label: "Température (°C)",
+          data: temp24h,
+          borderWidth: 3,
+          tension: 0.4
+        }]
+      }
     });
   } else {
     chart24h.data.labels = labels24h;
@@ -134,15 +166,21 @@ async function loadData() {
   }
 
   // graphique 7j
-  const labels7j = data7j.map(d =>
-    formatDate(new Date(d.timestamp))
-  );
+  const labels7j = data7j.map(d => formatDate(new Date(d.timestamp)));
   const temp7j = data7j.map(d => d.temperature);
 
   if (!chart7j) {
-    chart7j = new Chart(chart7jCanvas.getContext("2d"), {
+    chart7j = new Chart(document.getElementById("chart7j"), {
       type: "line",
-      data: { labels: labels7j, datasets: [{ label: "°C", data: temp7j }] }
+      data: {
+        labels: labels7j,
+        datasets: [{
+          label: "Température (°C)",
+          data: temp7j,
+          borderWidth: 3,
+          tension: 0.4
+        }]
+      }
     });
   } else {
     chart7j.data.labels = labels7j;
@@ -153,7 +191,7 @@ async function loadData() {
   // tableau
   const tbody = document.getElementById("tableBody");
   tbody.innerHTML = "";
-  data7j.reverse().forEach(d => {
+  data7j.slice().reverse().forEach(d => {
     const date = new Date(d.timestamp);
     tbody.innerHTML += `
       <tr>
@@ -167,7 +205,7 @@ async function loadData() {
 }
 
 loadData();
-setInterval(loadData, 60000); // 1 minute
+setInterval(loadData, 60000);
 </script>
 
 </body>
