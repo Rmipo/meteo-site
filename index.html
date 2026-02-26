@@ -2,7 +2,11 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Station météo</title>
+  <title>Station météo locale</title>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -11,60 +15,120 @@
       text-align: center;
       padding: 40px;
     }
+
+    h1 {
+      margin-bottom: 30px;
+    }
+
     .box {
       background: #1e293b;
       padding: 20px;
-      border-radius: 10px;
-      width: 300px;
+      border-radius: 12px;
+      width: 320px;
       margin: auto;
+      margin-bottom: 30px;
     }
+
+    .label {
+      font-size: 0.9em;
+      opacity: 0.8;
+    }
+
     .value {
       font-size: 2em;
-      margin: 10px 0;
+      margin-bottom: 15px;
+    }
+
+    canvas {
+      max-width: 600px;
+      margin: auto;
     }
   </style>
 </head>
+
 <body>
 
 <h1>🌦️ Station météo</h1>
 
 <div class="box">
-  <div>🌡️ Température</div>
+  <div class="label">🌡️ Température</div>
   <div class="value" id="temp">---</div>
 
-  <div>💧 Humidité</div>
+  <div class="label">💧 Humidité</div>
   <div class="value" id="hum">---</div>
 
-  <div>⏲️ Pression</div>
+  <div class="label">⏲️ Pression</div>
   <div class="value" id="pres">---</div>
 
   <p id="status">Chargement...</p>
 </div>
 
+<canvas id="tempChart"></canvas>
+
 <script>
 const url = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
 
+let chart = null;
+
 async function loadData() {
   try {
-    const res = await fetch(url);
-    const data = await res.json();
+    const response = await fetch(url);
+    const data = await response.json();
 
-    console.log("DONNÉES REÇUES :", data);
+    // dernière mesure
+    const last = data[data.length - 1];
 
-    document.getElementById("temp").textContent = data.temperature + " °C";
-    document.getElementById("hum").textContent = data.humidity + " %";
-    document.getElementById("pres").textContent = data.pressure + " hPa";
+    document.getElementById("temp").textContent = last.temperature + " °C";
+    document.getElementById("hum").textContent = last.humidity + " %";
+    document.getElementById("pres").textContent = last.pressure + " hPa";
 
     document.getElementById("status").textContent =
-      "Dernière mise à jour : " + new Date().toLocaleTimeString();
+      "Dernière mise à jour : " + new Date(last.timestamp).toLocaleTimeString();
+
+    // données graphique
+    const labels = data.map(d =>
+      new Date(d.timestamp).toLocaleTimeString()
+    );
+
+    const temperatures = data.map(d => d.temperature);
+
+    if (!chart) {
+      const ctx = document.getElementById("tempChart").getContext("2d");
+      chart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: labels,
+          datasets: [{
+            label: "Température (°C)",
+            data: temperatures,
+            borderWidth: 2,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              beginAtZero: false
+            }
+          }
+        }
+      });
+    } else {
+      chart.data.labels = labels;
+      chart.data.datasets[0].data = temperatures;
+      chart.update();
+    }
 
   } catch (err) {
-    console.error("ERREUR :", err);
+    console.error("Erreur chargement données :", err);
+    document.getElementById("status").textContent = "Erreur de connexion";
   }
 }
 
+// première charge + rafraîchissement auto
 loadData();
-setInterval(loadData, 10000);
+setInterval(loadData, 10000); // 10 secondes
 </script>
 
 </body>
