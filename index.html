@@ -15,26 +15,19 @@ body {
   padding: 40px;
 }
 
-h1 {
-  font-size: 2.5em;
-  margin-bottom: 30px;
-}
-
-h2 {
-  margin-top: 50px;
-}
+h1 { font-size: 2.5em; }
+h2 { margin-top: 60px; }
 
 .meteo-box {
   background: #1e293b;
   padding: 30px;
   border-radius: 20px;
-  width: 340px;
+  width: 360px;
   margin: auto;
-  box-shadow: 0 0 20px rgba(0,0,0,0.5);
 }
 
 .big-value {
-  font-size: 3em;
+  font-size: 3.2em;
   font-weight: bold;
 }
 
@@ -49,8 +42,16 @@ h2 {
   margin-top: 15px;
 }
 
+.alert {
+  margin-top: 20px;
+  font-size: 1.2em;
+  font-weight: bold;
+}
+
 canvas {
-  max-width: 900px;
+  width: 100% !important;
+  max-width: 1200px;
+  height: 420px !important;
   margin: 40px auto;
 }
 
@@ -59,30 +60,25 @@ table {
   margin: 40px auto;
   border-collapse: collapse;
   background: #1e293b;
-  border-radius: 10px;
-  overflow: hidden;
 }
 
 th, td {
   padding: 10px;
   border-bottom: 1px solid #334155;
 }
-
-th {
-  background: #020617;
-}
 </style>
 </head>
 
 <body>
 
-<h1>🌦️ Station météo</h1>
+<h1>🌦️ Station météo locale</h1>
 
 <div class="meteo-box">
   <div class="big-value" id="temp">---</div>
   <div class="sub-value" id="hum">---</div>
   <div class="sub-value" id="pres">---</div>
   <div class="update" id="status">Chargement...</div>
+  <div class="alert" id="alert">Analyse météo...</div>
 </div>
 
 <h2>📈 Température — dernières 24h</h2>
@@ -91,14 +87,14 @@ th {
 <h2>📊 Température — 7 derniers jours</h2>
 <canvas id="chart7j"></canvas>
 
-<h2>📋 Historique détaillé</h2>
+<h2>📋 Historique</h2>
 <table>
 <thead>
 <tr>
 <th>Date</th>
-<th>Température (°C)</th>
-<th>Humidité (%)</th>
-<th>Pression (hPa)</th>
+<th>Température</th>
+<th>Humidité</th>
+<th>Pression</th>
 </tr>
 </thead>
 <tbody id="tableBody"></tbody>
@@ -112,95 +108,96 @@ let chart7j = null;
 
 const jours = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"];
 
-function formatDate(date) {
-  return `${jours[date.getDay()]} ${date.getDate().toString().padStart(2,"0")}/` +
-         `${(date.getMonth()+1).toString().padStart(2,"0")}/${date.getFullYear()}`;
+function formatDate(d){
+  return `${jours[d.getDay()]} ${d.getDate().toString().padStart(2,"0")}/${(d.getMonth()+1).toString().padStart(2,"0")}/${d.getFullYear()}`;
 }
 
-function formatDateTime(date) {
-  return `Dernière mise à jour aujourd’hui : ${date.toLocaleDateString()} à ${date.toLocaleTimeString()}`;
-}
-
-async function loadData() {
+async function loadData(){
   const res = await fetch(url);
   const raw = await res.json();
   const data = Array.isArray(raw) ? raw : [raw];
 
-  if (data.length === 0) return;
+  if (data.length < 3) return;
 
   const now = new Date();
-  const last = data[data.length - 1];
-  const lastDate = new Date(last.timestamp);
+  const last = data[data.length-1];
+  const prev = data[data.length-2];
+  const prev2 = data[data.length-3];
 
-  // affichage principal
   document.getElementById("temp").textContent = last.temperature + " °C";
   document.getElementById("hum").textContent = "💧 Humidité : " + last.humidity + " %";
   document.getElementById("pres").textContent = "⏲️ Pression : " + last.pressure + " hPa";
-  document.getElementById("status").textContent = formatDateTime(lastDate);
+  document.getElementById("status").textContent =
+    `Dernière mise à jour aujourd’hui : ${new Date(last.timestamp).toLocaleString()}`;
 
-  // filtres
-  const data24h = data.filter(d => now - new Date(d.timestamp) <= 24*60*60*1000);
-  const data7j = data.filter(d => now - new Date(d.timestamp) <= 7*24*60*60*1000);
+  // 🔮 ANALYSE PRESSION
+  const dp1 = prev.pressure - last.pressure;
+  const dp2 = prev2.pressure - prev.pressure;
+  const chute = dp1 + dp2;
 
-  // graphique 24h
-  const labels24h = data24h.map(d => new Date(d.timestamp).toLocaleTimeString());
-  const temp24h = data24h.map(d => d.temperature);
+  let alertText = "Conditions stables";
+  let alertColor = "#22c55e";
+
+  if (chute >= 3) {
+    alertText = "🚨 Orage très probable (pression en chute rapide)";
+    alertColor = "#ef4444";
+  } else if (chute >= 2) {
+    alertText = "⚠️ Risque d’orage dans les prochaines heures";
+    alertColor = "#f97316";
+  } else if (chute >= 1) {
+    alertText = "Instabilité atmosphérique détectée";
+    alertColor = "#eab308";
+  }
+
+  document.getElementById("alert").textContent = alertText;
+  document.getElementById("alert").style.color = alertColor;
+
+  // FILTRES
+  const data24h = data.filter(d => now - new Date(d.timestamp) <= 24*3600000);
+  const data7j = data.filter(d => now - new Date(d.timestamp) <= 7*24*3600000);
+
+  // GRAPHIQUE 24H
+  const l24 = data24h.map(d => new Date(d.timestamp).toLocaleTimeString());
+  const t24 = data24h.map(d => d.temperature);
 
   if (!chart24h) {
-    chart24h = new Chart(document.getElementById("chart24h"), {
-      type: "line",
-      data: {
-        labels: labels24h,
-        datasets: [{
-          label: "Température (°C)",
-          data: temp24h,
-          borderWidth: 3,
-          tension: 0.4
-        }]
-      }
+    chart24h = new Chart(chart24hCanvas, {
+      type:"line",
+      data:{ labels:l24, datasets:[{ label:"Température (°C)", data:t24, borderWidth:3, tension:0.4 }] }
     });
   } else {
-    chart24h.data.labels = labels24h;
-    chart24h.data.datasets[0].data = temp24h;
+    chart24h.data.labels = l24;
+    chart24h.data.datasets[0].data = t24;
     chart24h.update();
   }
 
-  // graphique 7j
-  const labels7j = data7j.map(d => formatDate(new Date(d.timestamp)));
-  const temp7j = data7j.map(d => d.temperature);
+  // GRAPHIQUE 7J
+  const l7 = data7j.map(d => formatDate(new Date(d.timestamp)));
+  const t7 = data7j.map(d => d.temperature);
 
   if (!chart7j) {
-    chart7j = new Chart(document.getElementById("chart7j"), {
-      type: "line",
-      data: {
-        labels: labels7j,
-        datasets: [{
-          label: "Température (°C)",
-          data: temp7j,
-          borderWidth: 3,
-          tension: 0.4
-        }]
-      }
+    chart7j = new Chart(chart7jCanvas, {
+      type:"line",
+      data:{ labels:l7, datasets:[{ label:"Température (°C)", data:t7, borderWidth:3, tension:0.4 }] }
     });
   } else {
-    chart7j.data.labels = labels7j;
-    chart7j.data.datasets[0].data = temp7j;
+    chart7j.data.labels = l7;
+    chart7j.data.datasets[0].data = t7;
     chart7j.update();
   }
 
-  // tableau
+  // TABLEAU
   const tbody = document.getElementById("tableBody");
   tbody.innerHTML = "";
-  data7j.slice().reverse().forEach(d => {
-    const date = new Date(d.timestamp);
+  data7j.slice().reverse().forEach(d=>{
+    const dt = new Date(d.timestamp);
     tbody.innerHTML += `
       <tr>
-        <td>${formatDate(date)}</td>
+        <td>${formatDate(dt)}</td>
         <td>${d.temperature}</td>
         <td>${d.humidity}</td>
         <td>${d.pressure}</td>
-      </tr>
-    `;
+      </tr>`;
   });
 }
 
