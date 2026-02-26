@@ -39,18 +39,39 @@ h2 { margin-top: 60px; }
 .update {
   font-size: 0.9em;
   opacity: 0.8;
-  margin-top: 15px;
+  margin-top: 10px;
+}
+
+.weather-icon {
+  font-size: 3em;
+  margin: 10px 0;
 }
 
 .alert {
-  margin-top: 20px;
-  font-size: 1.2em;
+  font-size: 1.3em;
   font-weight: bold;
+  margin-top: 10px;
+}
+
+.bar {
+  width: 100%;
+  height: 14px;
+  background: #020617;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-top: 10px;
+}
+
+.fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #22c55e, #eab308, #ef4444);
+  transition: width 0.5s;
 }
 
 canvas {
   width: 100% !important;
-  max-width: 1200px;
+  max-width: 1300px;
   height: 420px !important;
   margin: 40px auto;
 }
@@ -71,14 +92,21 @@ th, td {
 
 <body>
 
-<h1>🌦️ Station météo</h1>
+<h1>🌦️ Station météo locale</h1>
 
 <div class="meteo-box">
   <div class="big-value" id="temp">---</div>
   <div class="sub-value" id="hum">---</div>
   <div class="sub-value" id="pres">---</div>
-  <div class="update" id="status">Chargement...</div>
+
+  <div class="weather-icon" id="icon">☀️</div>
   <div class="alert" id="alert">Analyse météo...</div>
+
+  <div class="bar">
+    <div class="fill" id="intensityBar"></div>
+  </div>
+
+  <div class="update" id="status">Chargement...</div>
 </div>
 
 <h2>📈 Température — dernières 24h</h2>
@@ -103,124 +131,62 @@ th, td {
 <script>
 const url = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
 
-let chart24h = null;
-let chart7j = null;
-
-const jours = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"];
-
-function formatDate(d){
-  return `${jours[d.getDay()]} ${d.getDate().toString().padStart(2,"0")}/${(d.getMonth()+1).toString().padStart(2,"0")}/${d.getFullYear()}`;
-}
-
 async function loadData(){
   const res = await fetch(url);
   const raw = await res.json();
   const data = Array.isArray(raw) ? raw : [raw];
-
   if (data.length < 3) return;
 
-  const now = new Date();
-  const last = data[data.length - 1];
-  const prev = data[data.length - 2];
-  const prev2 = data[data.length - 3];
+  const last = data[data.length-1];
+  const prev = data[data.length-3];
 
-  // affichage principal
   document.getElementById("temp").textContent = last.temperature + " °C";
   document.getElementById("hum").textContent = "💧 Humidité : " + last.humidity + " %";
   document.getElementById("pres").textContent = "⏲️ Pression : " + last.pressure + " hPa";
   document.getElementById("status").textContent =
-    `Dernière mise à jour aujourd’hui : ${new Date(last.timestamp).toLocaleString()}`;
+    "Dernière mise à jour aujourd’hui : " + new Date(last.timestamp).toLocaleString();
 
-  // analyse orage (pression)
-  const chute = (prev.pressure - last.pressure) + (prev2.pressure - prev.pressure);
+  // --- ANALYSE MÉTÉO ---
+  const dP = prev.pressure - last.pressure;
+  const H = last.humidity;
+  const T = last.temperature;
 
-  let alertText = "Conditions stables";
-  let alertColor = "#22c55e";
+  let score = dP * 40 + H * 0.3 + (T > 20 ? 10 : 0);
+  score = Math.max(0, Math.min(100, score));
+  document.getElementById("intensityBar").style.width = score + "%";
 
-  if (chute >= 3) {
-    alertText = "🚨 Orage très probable (pression en chute rapide)";
-    alertColor = "#ef4444";
-  } else if (chute >= 2) {
-    alertText = "⚠️ Risque d’orage dans les prochaines heures";
-    alertColor = "#f97316";
-  } else if (chute >= 1) {
-    alertText = "Instabilité atmosphérique détectée";
-    alertColor = "#eab308";
+  let icon = "☀️";
+  let text = "Beau temps stable";
+
+  if (score > 80) {
+    icon = "🌩️";
+    text = "Orage intense possible";
+  } else if (score > 60) {
+    icon = "⛈️";
+    text = "Orage probable";
+  } else if (score > 40) {
+    icon = "🌧️";
+    text = "Pluie possible";
+  } else if (score > 25) {
+    icon = "🌤️";
+    text = "Nuages et instabilité";
   }
 
-  const alertEl = document.getElementById("alert");
-  alertEl.textContent = alertText;
-  alertEl.style.color = alertColor;
+  document.getElementById("icon").textContent = icon;
+  document.getElementById("alert").textContent = text;
 
-  // filtres
-  const data24h = data.filter(d => now - new Date(d.timestamp) <= 24 * 3600000);
-  const data7j = data.filter(d => now - new Date(d.timestamp) <= 7 * 24 * 3600000);
-
-  // graphique 24h
-  const labels24h = data24h.map(d => new Date(d.timestamp).toLocaleTimeString());
-  const temps24h = data24h.map(d => d.temperature);
-
-  if (!chart24h) {
-    chart24h = new Chart(
-      document.getElementById("chart24h").getContext("2d"),
-      {
-        type: "line",
-        data: {
-          labels: labels24h,
-          datasets: [{
-            label: "Température (°C)",
-            data: temps24h,
-            borderWidth: 3,
-            tension: 0.4
-          }]
-        }
-      }
-    );
-  } else {
-    chart24h.data.labels = labels24h;
-    chart24h.data.datasets[0].data = temps24h;
-    chart24h.update();
-  }
-
-  // graphique 7j
-  const labels7j = data7j.map(d => formatDate(new Date(d.timestamp)));
-  const temps7j = data7j.map(d => d.temperature);
-
-  if (!chart7j) {
-    chart7j = new Chart(
-      document.getElementById("chart7j").getContext("2d"),
-      {
-        type: "line",
-        data: {
-          labels: labels7j,
-          datasets: [{
-            label: "Température (°C)",
-            data: temps7j,
-            borderWidth: 3,
-            tension: 0.4
-          }]
-        }
-      }
-    );
-  } else {
-    chart7j.data.labels = labels7j;
-    chart7j.data.datasets[0].data = temps7j;
-    chart7j.update();
-  }
-
-  // tableau
+  // HISTORIQUE
   const tbody = document.getElementById("tableBody");
   tbody.innerHTML = "";
-  data7j.slice().reverse().forEach(d => {
+  data.slice(-50).reverse().forEach(d=>{
     const dt = new Date(d.timestamp);
     tbody.innerHTML += `
       <tr>
-        <td>${formatDate(dt)}</td>
+        <td>${dt.toLocaleDateString("fr-FR",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})}</td>
         <td>${d.temperature}</td>
         <td>${d.humidity}</td>
         <td>${d.pressure}</td>
-      </tr>
-    `;
+      </tr>`;
   });
 }
 
