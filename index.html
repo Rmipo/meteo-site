@@ -71,7 +71,7 @@ th, td {
 
 <body>
 
-<h1>🌦️ Station météo locale</h1>
+<h1>🌦️ Station météo</h1>
 
 <div class="meteo-box">
   <div class="big-value" id="temp">---</div>
@@ -120,20 +120,19 @@ async function loadData(){
   if (data.length < 3) return;
 
   const now = new Date();
-  const last = data[data.length-1];
-  const prev = data[data.length-2];
-  const prev2 = data[data.length-3];
+  const last = data[data.length - 1];
+  const prev = data[data.length - 2];
+  const prev2 = data[data.length - 3];
 
+  // affichage principal
   document.getElementById("temp").textContent = last.temperature + " °C";
   document.getElementById("hum").textContent = "💧 Humidité : " + last.humidity + " %";
   document.getElementById("pres").textContent = "⏲️ Pression : " + last.pressure + " hPa";
   document.getElementById("status").textContent =
     `Dernière mise à jour aujourd’hui : ${new Date(last.timestamp).toLocaleString()}`;
 
-  // 🔮 ANALYSE PRESSION
-  const dp1 = prev.pressure - last.pressure;
-  const dp2 = prev2.pressure - prev.pressure;
-  const chute = dp1 + dp2;
+  // analyse orage (pression)
+  const chute = (prev.pressure - last.pressure) + (prev2.pressure - prev.pressure);
 
   let alertText = "Conditions stables";
   let alertColor = "#22c55e";
@@ -149,47 +148,70 @@ async function loadData(){
     alertColor = "#eab308";
   }
 
-  document.getElementById("alert").textContent = alertText;
-  document.getElementById("alert").style.color = alertColor;
+  const alertEl = document.getElementById("alert");
+  alertEl.textContent = alertText;
+  alertEl.style.color = alertColor;
 
-  // FILTRES
-  const data24h = data.filter(d => now - new Date(d.timestamp) <= 24*3600000);
-  const data7j = data.filter(d => now - new Date(d.timestamp) <= 7*24*3600000);
+  // filtres
+  const data24h = data.filter(d => now - new Date(d.timestamp) <= 24 * 3600000);
+  const data7j = data.filter(d => now - new Date(d.timestamp) <= 7 * 24 * 3600000);
 
-  // GRAPHIQUE 24H
-  const l24 = data24h.map(d => new Date(d.timestamp).toLocaleTimeString());
-  const t24 = data24h.map(d => d.temperature);
+  // graphique 24h
+  const labels24h = data24h.map(d => new Date(d.timestamp).toLocaleTimeString());
+  const temps24h = data24h.map(d => d.temperature);
 
   if (!chart24h) {
-    chart24h = new Chart(chart24hCanvas, {
-      type:"line",
-      data:{ labels:l24, datasets:[{ label:"Température (°C)", data:t24, borderWidth:3, tension:0.4 }] }
-    });
+    chart24h = new Chart(
+      document.getElementById("chart24h").getContext("2d"),
+      {
+        type: "line",
+        data: {
+          labels: labels24h,
+          datasets: [{
+            label: "Température (°C)",
+            data: temps24h,
+            borderWidth: 3,
+            tension: 0.4
+          }]
+        }
+      }
+    );
   } else {
-    chart24h.data.labels = l24;
-    chart24h.data.datasets[0].data = t24;
+    chart24h.data.labels = labels24h;
+    chart24h.data.datasets[0].data = temps24h;
     chart24h.update();
   }
 
-  // GRAPHIQUE 7J
-  const l7 = data7j.map(d => formatDate(new Date(d.timestamp)));
-  const t7 = data7j.map(d => d.temperature);
+  // graphique 7j
+  const labels7j = data7j.map(d => formatDate(new Date(d.timestamp)));
+  const temps7j = data7j.map(d => d.temperature);
 
   if (!chart7j) {
-    chart7j = new Chart(chart7jCanvas, {
-      type:"line",
-      data:{ labels:l7, datasets:[{ label:"Température (°C)", data:t7, borderWidth:3, tension:0.4 }] }
-    });
+    chart7j = new Chart(
+      document.getElementById("chart7j").getContext("2d"),
+      {
+        type: "line",
+        data: {
+          labels: labels7j,
+          datasets: [{
+            label: "Température (°C)",
+            data: temps7j,
+            borderWidth: 3,
+            tension: 0.4
+          }]
+        }
+      }
+    );
   } else {
-    chart7j.data.labels = l7;
-    chart7j.data.datasets[0].data = t7;
+    chart7j.data.labels = labels7j;
+    chart7j.data.datasets[0].data = temps7j;
     chart7j.update();
   }
 
-  // TABLEAU
+  // tableau
   const tbody = document.getElementById("tableBody");
   tbody.innerHTML = "";
-  data7j.slice().reverse().forEach(d=>{
+  data7j.slice().reverse().forEach(d => {
     const dt = new Date(d.timestamp);
     tbody.innerHTML += `
       <tr>
@@ -197,7 +219,8 @@ async function loadData(){
         <td>${d.temperature}</td>
         <td>${d.humidity}</td>
         <td>${d.pressure}</td>
-      </tr>`;
+      </tr>
+    `;
   });
 }
 
