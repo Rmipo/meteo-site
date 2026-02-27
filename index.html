@@ -104,7 +104,14 @@ th, td {
   <div class="bar">
     <div class="fill" id="intensityBar"></div>
   </div>
-
+  
+<div style="margin-top:20px; font-size:0.95em;">
+  <div id="stormVector">Vent cellule : --</div>
+  <div id="stormArrow" style="font-size:2.2em; margin:5px 0;">⬆️</div>
+  <div id="stormETA">Arrivée estimée (10 km) : --</div>
+  <div id="shearInfo">Cisaillement vertical : --</div>
+</div>
+  
   <div class="update" id="status">Chargement...</div>
 </div>
 
@@ -114,6 +121,14 @@ th, td {
 <h2>📊 Température — 7 derniers jours</h2>
 <canvas id="chart7j"></canvas>
 
+<h2>📡 Radar pluie temps réel</h2>
+<iframe 
+  width="100%" 
+  height="500"
+  style="border-radius:15px; margin-top:20px;"
+  src="https://www.rainviewer.com/map.html?loc=46.42964,1.83906,8&oFa=1&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=3&o=83&lm=1&layer=radar&sm=1&sn=1">
+</iframe>  
+  
 <h2>📋 Historique</h2>
 <table>
 <thead>
@@ -160,6 +175,78 @@ async function loadData(){
   document.getElementById("icon").textContent=icon;
   document.getElementById("alert").textContent=text;
 
+  const lat = 46.42964;
+const lon = 1.83906;
+
+function degToRad(d){return d*Math.PI/180;}
+function radToDeg(r){return r*180/Math.PI;}
+
+function vectorAverage(speed1,dir1,speed2,dir2){
+  const u1=speed1*Math.cos(degToRad(dir1));
+  const v1=speed1*Math.sin(degToRad(dir1));
+  const u2=speed2*Math.cos(degToRad(dir2));
+  const v2=speed2*Math.sin(degToRad(dir2));
+  const u=(u1+u2)/2;
+  const v=(v1+v2)/2;
+  const speed=Math.sqrt(u*u+v*v);
+  let dir=radToDeg(Math.atan2(v,u));
+  if(dir<0) dir+=360;
+  return {speed,dir};
+}
+
+function arrowFromDeg(deg){
+  if(deg>=337.5||deg<22.5) return "⬆️";
+  if(deg<67.5) return "↗️";
+  if(deg<112.5) return "➡️";
+  if(deg<157.5) return "↘️";
+  if(deg<202.5) return "⬇️";
+  if(deg<247.5) return "↙️";
+  if(deg<292.5) return "⬅️";
+  return "↖️";
+}
+
+async function loadUpperAtmosphere(){
+
+  const api=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=windspeed_850hPa,winddirection_850hPa,windspeed_700hPa,winddirection_700hPa&forecast_days=1`;
+
+  const res=await fetch(api);
+  const data=await res.json();
+
+  const s850=data.hourly.windspeed_850hPa[0];
+  const d850=data.hourly.winddirection_850hPa[0];
+  const s700=data.hourly.windspeed_700hPa[0];
+  const d700=data.hourly.winddirection_700hPa[0];
+
+  const avg=vectorAverage(s850,d850,s700,d700);
+  const shear=Math.abs(s700-s850);
+
+  let eta="--";
+  if(avg.speed>5){
+    const min=Math.round((10/avg.speed)*60);
+    eta=min+" min";
+  }
+
+  document.getElementById("stormVector").textContent=
+    "Vent cellule : "+avg.speed.toFixed(1)+" km/h ("+Math.round(avg.dir)+"°)";
+
+  document.getElementById("stormArrow").textContent=
+    arrowFromDeg(avg.dir);
+
+  document.getElementById("stormETA").textContent=
+    "Arrivée estimée : "+eta;
+
+  let shearText="Faible";
+  if(shear>30) shearText="Très fort ⚠️";
+  else if(shear>20) shearText="Fort";
+  else if(shear>10) shearText="Modéré";
+
+  document.getElementById("shearInfo").textContent=
+    "Cisaillement : "+shear.toFixed(1)+" km/h ("+shearText+")";
+}
+
+loadUpperAtmosphere();
+setInterval(loadUpperAtmosphere,300000);
+  
   // --- TABLE ---
   const tbody = document.getElementById("tableBody");
   tbody.innerHTML="";
@@ -219,3 +306,4 @@ setInterval(loadData,60000);
 
 </body>
 </html>
+
