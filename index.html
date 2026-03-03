@@ -207,7 +207,7 @@ function arrowFromDeg(deg){
 
 async function loadUpperAtmosphere(){
 
-  const api = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=windspeed_850hPa,winddirection_850hPa,windspeed_700hPa,winddirection_700hPa,cape,lifted_index,k_index,temperature_500hPa,helicity_0_3km&forecast_days=1`;
+  const api = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=windspeed_850hPa,winddirection_850hPa,windspeed_700hPa,winddirection_700hPa,cape,lifted_index,k_index,temperature_500hPa&forecast_days=1`;
 
   const res = await fetch(api);
   const data = await res.json();
@@ -396,6 +396,7 @@ setInterval(loadData,60000);
 
 </body>
 </html>
+
 
 
 
