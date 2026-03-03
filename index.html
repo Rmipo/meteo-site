@@ -207,24 +207,98 @@ function arrowFromDeg(deg){
 
 async function loadUpperAtmosphere(){
 
-  const api=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=windspeed_850hPa,winddirection_850hPa,windspeed_700hPa,winddirection_700hPa&forecast_days=1`;
+  const api = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=windspeed_850hPa,winddirection_850hPa,windspeed_700hPa,winddirection_700hPa,cape,lifted_index,k_index,temperature_500hPa,helicity_0_3km&forecast_days=1`;
 
-  const res=await fetch(api);
-  const data=await res.json();
+  const res = await fetch(api);
+  const data = await res.json();
 
-  const s850=data.hourly.windspeed_850hPa[0];
-  const d850=data.hourly.winddirection_850hPa[0];
-  const s700=data.hourly.windspeed_700hPa[0];
-  const d700=data.hourly.winddirection_700hPa[0];
+  // ======== VENTS ALTITUDE (déjà existant) ========
 
-  const avg=vectorAverage(s850,d850,s700,d700);
-  const shear=Math.abs(s700-s850);
+  const s850 = data.hourly.windspeed_850hPa[0];
+  const d850 = data.hourly.winddirection_850hPa[0];
+  const s700 = data.hourly.windspeed_700hPa[0];
+  const d700 = data.hourly.winddirection_700hPa[0];
 
-  let eta="--";
-  if(avg.speed>5){
-    const min=Math.round((10/avg.speed)*60);
-    eta=min+" min";
+  const avg = vectorAverage(s850, d850, s700, d700);
+  const shear = Math.abs(s700 - s850);
+
+  let eta = "--";
+  if(avg.speed > 5){
+    const min = Math.round((10 / avg.speed) * 60);
+    eta = min + " min";
   }
+
+  document.getElementById("stormVector").textContent =
+    "Vent cellule : " + avg.speed.toFixed(1) + " km/h (" + Math.round(avg.dir) + "°)";
+
+  document.getElementById("stormArrow").textContent =
+    arrowFromDeg(avg.dir);
+
+  document.getElementById("stormETA").textContent =
+    "Arrivée estimée : " + eta;
+
+  let shearText = "Faible";
+  if(shear > 30) shearText = "Très fort ⚠️";
+  else if(shear > 20) shearText = "Fort";
+  else if(shear > 10) shearText = "Modéré";
+
+  document.getElementById("shearInfo").textContent =
+    "Cisaillement : " + shear.toFixed(1) + " km/h (" + shearText + ")";
+
+
+  // ======== PROFIL ATMOSPHÉRIQUE AVANCÉ ========
+
+  const cape = data.hourly.cape?.[0] ?? 0;
+  const li = data.hourly.lifted_index?.[0] ?? 0;
+  const kIndex = data.hourly.k_index?.[0] ?? 0;
+  const t500 = data.hourly.temperature_500hPa?.[0] ?? 0;
+  const helicity = data.hourly.helicity_0_3km?.[0] ?? 0;
+
+  // ======== ANALYSE CONVECTIVE AVANCÉE ========
+
+  let convScore = 0;
+
+  // CAPE pondération
+  if(cape > 2000) convScore += 40;
+  else if(cape > 1000) convScore += 30;
+  else if(cape > 500) convScore += 20;
+  else if(cape > 200) convScore += 10;
+
+  // Lifted Index
+  if(li < -6) convScore += 25;
+  else if(li < -4) convScore += 20;
+  else if(li < -2) convScore += 10;
+
+  // K Index
+  if(kIndex > 35) convScore += 20;
+  else if(kIndex > 30) convScore += 15;
+  else if(kIndex > 25) convScore += 10;
+
+  // Hélicité
+  if(helicity > 300) convScore += 15;
+  else if(helicity > 150) convScore += 10;
+
+  convScore = Math.min(100, convScore);
+
+  // ======== INTERPRÉTATION ========
+
+  let advancedText = "Atmosphère stable";
+  if(convScore > 80) advancedText = "⚠️ Potentiel orage sévère";
+  else if(convScore > 60) advancedText = "🌩️ Fort potentiel orageux";
+  else if(convScore > 40) advancedText = "⛈️ Instabilité marquée";
+  else if(convScore > 20) advancedText = "🌦️ Instabilité modérée";
+
+  // On affiche dans la console (pas de changement visuel)
+  console.log("===== PROFIL ATMOSPHÉRIQUE =====");
+  console.log("CAPE :", cape);
+  console.log("Lifted Index :", li);
+  console.log("K Index :", kIndex);
+  console.log("Température 500hPa :", t500);
+  console.log("Hélicité 0-3km :", helicity);
+  console.log("Score convectif avancé :", convScore);
+  console.log("Analyse :", advancedText);
+
+}
 
   document.getElementById("stormVector").textContent=
     "Vent cellule : "+avg.speed.toFixed(1)+" km/h ("+Math.round(avg.dir)+"°)";
@@ -306,4 +380,5 @@ setInterval(loadData,60000);
 
 </body>
 </html>
+
 
