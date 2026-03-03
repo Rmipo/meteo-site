@@ -282,38 +282,38 @@ async function loadUpperAtmosphere(){
 
   // ===== SCORE GLOBAL V2 =====
 
-// On récupère le score surface déjà calculé (barre actuelle)
-const surfaceScore = parseFloat(document.getElementById("intensityBar").style.width) || 0;
-
-// Organisation (shear converti en score sur 100)
-let shearScore = 0;
-if(shear > 30) shearScore = 100;
-else if(shear > 20) shearScore = 70;
-else if(shear > 10) shearScore = 40;
-else shearScore = 10;
-
-// Fusion pondérée
-let globalScoreV2 = 
+  // On récupère le score surface déjà calculé (barre actuelle)
+  const surfaceScore = parseFloat(document.getElementById("intensityBar").style.width) || 0;
+  
+  // Organisation (shear converti en score sur 100)
+  let shearScore = 0;
+  if(shear > 30) shearScore = 100;
+  else if(shear > 20) shearScore = 70;
+  else if(shear > 10) shearScore = 40;
+  else shearScore = 10;
+  
+  // Fusion pondérée
+  let globalScoreV2 = 
   surfaceScore * 0.4 +
   convScore * 0.4 +
   shearScore * 0.2;
-
-globalScoreV2 = Math.round(Math.min(100, globalScoreV2));
-
-// Interprétation
-let globalText = "Stable";
-if(globalScoreV2 > 80) globalText = "⚠️ Risque orage sévère";
-else if(globalScoreV2 > 60) globalText = "🌩️ Orage probable";
-else if(globalScoreV2 > 40) globalText = "⛈️ Instable";
-else if(globalScoreV2 > 25) globalText = "🌦️ Surveillance";
-
-// Affichage console uniquement
-console.log("===== SCORE GLOBAL V2 =====");
-console.log("Surface :", surfaceScore);
-console.log("Convectif :", convScore);
-console.log("Organisation :", shearScore);
-console.log("Score Global V2 :", globalScoreV2);
-console.log("Interprétation :", globalText);
+  
+  globalScoreV2 = Math.round(Math.min(100, globalScoreV2));
+  
+  // Interprétation
+  let globalText = "Stable";
+  if(globalScoreV2 > 80) globalText = "⚠️ Risque orage sévère";
+  else if(globalScoreV2 > 60) globalText = "🌩️ Orage probable";
+  else if(globalScoreV2 > 40) globalText = "⛈️ Instable";
+  else if(globalScoreV2 > 25) globalText = "🌦️ Surveillance";
+  
+  // Affichage console uniquement
+  console.log("===== SCORE GLOBAL V2 =====");
+  console.log("Surface :", surfaceScore);
+  console.log("Convectif :", convScore);
+  console.log("Organisation :", shearScore);
+  console.log("Score Global V2 :", globalScoreV2);
+  console.log("Interprétation :", globalText);
   
   // ======== INTERPRÉTATION ========
 
@@ -415,6 +415,7 @@ setInterval(loadData,60000);
 
 </body>
 </html>
+
 
 
 
