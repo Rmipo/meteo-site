@@ -334,25 +334,6 @@ async function loadUpperAtmosphere(){
   console.log("Analyse :", advancedText);
 
 }
-
-  document.getElementById("stormVector").textContent=
-    "Vent cellule : "+avg.speed.toFixed(1)+" km/h ("+Math.round(avg.dir)+"°)";
-
-  document.getElementById("stormArrow").textContent=
-    arrowFromDeg(avg.dir);
-
-  document.getElementById("stormETA").textContent=
-    "Arrivée estimée : "+eta;
-
-  let shearText="Faible";
-  if(shear>30) shearText="Très fort ⚠️";
-  else if(shear>20) shearText="Fort";
-  else if(shear>10) shearText="Modéré";
-
-  document.getElementById("shearInfo").textContent=
-    "Cisaillement : "+shear.toFixed(1)+" km/h ("+shearText+")";
-}
-
 loadUpperAtmosphere();
 setInterval(loadUpperAtmosphere,300000);
   
@@ -415,6 +396,7 @@ setInterval(loadData,60000);
 
 </body>
 </html>
+
 
 
 
