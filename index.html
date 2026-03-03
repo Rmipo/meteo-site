@@ -104,7 +104,12 @@ th, td {
   <div class="bar">
     <div class="fill" id="intensityBar"></div>
   </div>
-  
+
+  <div style="margin-top:15px; font-size:0.9em;">Score atmosphérique global</div>
+  <div class="bar">
+  <div class="fill" id="globalBar"></div>
+  </div>
+
 <div style="margin-top:20px; font-size:0.95em;">
   <div id="stormVector">Vent cellule : --</div>
   <div id="stormArrow" style="font-size:2.2em; margin:5px 0;">⬆️</div>
@@ -300,6 +305,8 @@ async function loadUpperAtmosphere(){
   
   globalScoreV2 = Math.round(Math.min(100, globalScoreV2));
   
+  document.getElementById("globalBar").style.width = globalScoreV2 + "%";
+  
   // Interprétation
   let globalText = "Stable";
   if(globalScoreV2 > 80) globalText = "⚠️ Risque orage sévère";
@@ -396,6 +403,7 @@ setInterval(loadData,60000);
 
 </body>
 </html>
+
 
 
 
