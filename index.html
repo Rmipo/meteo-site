@@ -115,6 +115,7 @@ th, td {
   <div id="stormArrow" style="font-size:2.2em; margin:5px 0;">⬆️</div>
   <div id="stormETA">Arrivée estimée (10 km) : --</div>
   <div id="shearInfo">Cisaillement vertical : --</div>
+  <div id="stormReal" style="margin-top:5px;">Activité : --</div>
 </div>
   
   <div class="update" id="status">Chargement...</div>
@@ -171,7 +172,38 @@ async function loadData(){
   const dP = prev.pressure - last.pressure;
   const score = Math.min(100, Math.max(0, dP * 40 + last.humidity * 0.3));
   document.getElementById("intensityBar").style.width = score + "%";
+  
+  // ===== ACTIVITÉ ORAGEUSE RÉELLE =====
 
+  // récup score global (barre V2)
+  let globalScore = parseFloat(document.getElementById("globalBar").style.width) || 0;
+
+  // conditions
+  const strongHumidity = last.humidity > 70;
+  const pressureDrop = (prev.pressure - last.pressure) > 1;
+
+  // détection
+  let stormActivity = false;
+
+  if(globalScore > 40 && strongHumidity && pressureDrop){
+    stormActivity = true;
+  }
+
+  const stormDiv = document.getElementById("stormReal");
+
+  if(stormActivity){
+    stormDiv.textContent = "Activité : 🌩️ Orage en cours";
+  }else{
+    stormDiv.textContent = "Activité : calme";
+  }
+  
+  // affichage console
+  console.log("===== ACTIVITÉ ORAGEUSE =====");
+  console.log("Humidité forte :", strongHumidity);
+  console.log("Chute pression :", pressureDrop);
+  console.log("Score global :", globalScore);
+  console.log("Orage réel détecté :", stormActivity);
+  
   let icon="☀️", text="Beau temps stable";
   if(score>80){icon="🌩️";text="Orage intense possible";}
   else if(score>60){icon="⛈️";text="Orage probable";}
