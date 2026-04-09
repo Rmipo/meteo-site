@@ -341,9 +341,29 @@ async function loadUpperAtmosphere(){
   console.log("Analyse :", advancedText);
 
 }
+
+async function loadRadarMeta(){
+
+  const res = await fetch("https://api.rainviewer.com/public/weather-maps.json");
+  const data = await res.json();
+
+  const radar = data.radar.past;
+
+  const lastFrame = radar[radar.length - 1];
+  const prevFrame = radar[radar.length - 2];
+
+  console.log("===== RADAR META =====");
+  console.log("Dernier timestamp :", lastFrame.time);
+  console.log("Frame précédente :", prevFrame.time);
+
+}
+ 
 loadUpperAtmosphere();
 setInterval(loadUpperAtmosphere,300000);
-  
+
+loadRadarMeta();
+setInterval(loadRadarMeta,300000);
+
   // --- TABLE ---
   const tbody = document.getElementById("tableBody");
   tbody.innerHTML="";
