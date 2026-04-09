@@ -339,39 +339,10 @@ async function loadUpperAtmosphere(){
   console.log("Hélicité 0-3km :", helicity);
   console.log("Score convectif avancé :", convScore);
   console.log("Analyse :", advancedText);
-
 }
 
-async function loadRadarMeta(){
-
-  const res = await fetch("https://api.rainviewer.com/public/weather-maps.json");
-  const data = await res.json();
-
-  const radar = data.radar.past;
-
-  const lastFrame = radar[radar.length - 1];
-  const prevFrame = radar[radar.length - 2];
-
-  console.log("===== RADAR META =====");
-  console.log("Dernier timestamp :", lastFrame.time);
-  console.log("Frame précédente :", prevFrame.time);
-  // Construction URL images radar
-  
-  const host = data.host;
-
-  const lastURL = `${host}${lastFrame.path}/256/6/0/0/2/1_1.png`;
-  const prevURL = `${host}${prevFrame.path}/256/6/0/0/2/1_1.png`;
-
-  console.log("Image actuelle :", lastURL);
-  console.log("Image précédente :", prevURL);
-  
-}
- 
 loadUpperAtmosphere();
 setInterval(loadUpperAtmosphere,300000);
-
-loadRadarMeta();
-setInterval(loadRadarMeta,300000);
 
   // --- TABLE ---
   const tbody = document.getElementById("tableBody");
