@@ -355,7 +355,20 @@ async function loadRadarMeta(){
   console.log("===== RADAR META =====");
   console.log("Dernier timestamp :", lastFrame.time);
   console.log("Frame précédente :", prevFrame.time);
+  // Construction URL images radar
+  
+  const tileSize = 256;
+  const zoom = 6;
 
+  const latTile = Math.floor((lat + 90) / 180 * Math.pow(2, zoom));
+  const lonTile = Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
+
+  const lastURL = `https://tilecache.rainviewer.com/v2/radar/${lastFrame.time}/${tileSize}/${zoom}/${lonTile}/${latTile}/2/1_1.png`;
+  const prevURL = `https://tilecache.rainviewer.com/v2/radar/${prevFrame.time}/${tileSize}/${zoom}/${lonTile}/${latTile}/2/1_1.png`;
+
+  console.log("Image actuelle :", lastURL);
+  console.log("Image précédente :", prevURL);
+  
 }
  
 loadUpperAtmosphere();
