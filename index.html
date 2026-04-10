@@ -2,46 +2,124 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Station météo</title>
 
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-body {
-  font-family: Arial, sans-serif;
-  background: linear-gradient(180deg, #020617, #0f172a);
-  color: white;
-  text-align: center;
-  padding: 40px;
+:root {
+  --bg-deep:  #020617;
+  --bg-card:  #1e293b;
+  --bg-inner: #0f172a;
+  --border:   #1e3a5f;
+  --accent:   #38bdf8;
+  --muted:    #64748b;
+  --text:     #e2e8f0;
+  --font:     'Rajdhani', Arial, sans-serif;
+  --mono:     'Share Tech Mono', monospace;
 }
 
-h1 { font-size: 2.5em; }
-h2 { margin-top: 60px; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
+body {
+  font-family: var(--font);
+  background: linear-gradient(180deg, #020617, #0f172a);
+  color: var(--text);
+  text-align: center;
+  padding: 40px 20px 80px;
+}
+
+h1 {
+  font-size: 2.5em;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--accent);
+  text-shadow: 0 0 28px rgba(56,189,248,0.35);
+  margin-bottom: 6px;
+}
+
+h1 small {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.32em;
+  color: var(--muted);
+  letter-spacing: 2px;
+  margin-top: 4px;
+}
+
+h2 {
+  margin-top: 60px;
+  font-size: 1.4em;
+  letter-spacing: 2px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ===== BOX PRINCIPALE ===== */
 .meteo-box {
-  background: #1e293b;
+  background: var(--bg-card);
   padding: 30px;
   border-radius: 20px;
-  width: 360px;
-  margin: auto;
+  width: 420px;
+  margin: 36px auto 0;
+  border: 1px solid var(--border);
+  position: relative;
 }
 
-.big-value {
-  font-size: 3.2em;
-  font-weight: bold;
+.meteo-box::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 10%; right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0.5;
 }
 
-.sub-value {
-  font-size: 1.4em;
-  margin: 10px 0;
+/* ===== 3 COLONNES mesures ===== */
+.mesures-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0;
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
 }
 
-.update {
-  font-size: 0.9em;
-  opacity: 0.8;
-  margin-top: 10px;
+.mesure-col {
+  padding: 16px 8px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-inner);
 }
 
+.mesure-col:last-child { border-right: none; }
+
+.mesure-label {
+  font-family: var(--mono);
+  font-size: 0.62em;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.mesure-val {
+  font-family: var(--mono);
+  font-size: 1.9em;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.mesure-unit {
+  font-size: 0.75em;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+/* ===== ICÔNE + ALERTE ===== */
 .weather-icon {
   font-size: 3em;
   margin: 10px 0;
@@ -53,473 +131,848 @@ h2 { margin-top: 60px; }
   margin-top: 10px;
 }
 
+/* ===== NIVEAUX ===== */
+.level-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.dot {
+  width: 13px; height: 13px;
+  border-radius: 50%;
+  background: #334155;
+  transition: background 0.5s, box-shadow 0.5s;
+}
+
+.dot.on-1 { background: #22c55e; box-shadow: 0 0 7px #22c55e; }
+.dot.on-2 { background: #84cc16; box-shadow: 0 0 7px #84cc16; }
+.dot.on-3 { background: #eab308; box-shadow: 0 0 7px #eab308; }
+.dot.on-4 { background: #f97316; box-shadow: 0 0 7px #f97316; }
+.dot.on-5 { background: #ef4444; box-shadow: 0 0 7px #ef4444; }
+
+/* ===== BARRES ===== */
+.bar-wrap { margin-top: 14px; text-align: left; }
+
+.bar-label-row {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 0.72em;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+
 .bar {
   width: 100%;
   height: 14px;
-  background: #020617;
+  background: var(--bg-inner);
   border-radius: 8px;
   overflow: hidden;
-  margin-top: 10px;
+  border: 1px solid var(--border);
 }
 
 .fill {
   height: 100%;
   width: 0%;
   background: linear-gradient(90deg, #22c55e, #eab308, #ef4444);
+  transition: width 0.8s ease;
+}
+
+/* ===== VECTEUR ORAGE ===== */
+.vector-block {
+  margin-top: 20px;
+  font-size: 0.95em;
+  text-align: left;
+  font-family: var(--mono);
+  line-height: 1.9;
+}
+
+.vector-block .arrow-big {
+  font-size: 2.2em;
+  text-align: center;
+  display: block;
+  margin: 4px 0;
+  transition: transform 0.5s;
+}
+
+/* ===== PROFIL ATMO ===== */
+.atmo-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 16px;
+  text-align: left;
+}
+
+.atmo-item {
+  background: var(--bg-inner);
+  border-radius: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+}
+
+.atmo-name {
+  font-family: var(--mono);
+  font-size: 0.62em;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.atmo-val {
+  font-family: var(--mono);
+  font-size: 1.25em;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.atmo-interp { font-size: 0.72em; color: var(--muted); margin-top: 2px; }
+
+/* ===== UPDATE ===== */
+.update {
+  font-family: var(--mono);
+  font-size: 0.78em;
+  color: var(--muted);
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.update .dot-live {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  margin-right: 5px;
+  animation: blink 1.4s infinite;
+  vertical-align: middle;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+
+/* ===== GRAPHIQUES ===== */
+.chart-wrap {
+  max-width: 1300px;
+  margin: 30px auto 0;
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 24px;
+  border: 1px solid var(--border);
 }
 
 canvas {
   width: 100% !important;
-  max-width: 1300px;
-  height: 420px !important;
-  margin: 40px auto;
+  height: 380px !important;
 }
 
+/* ===== GRAPHIQUE ORAGE (caché par défaut) ===== */
+#stormSection {
+  display: none;
+  max-width: 1300px;
+  margin: 40px auto 0;
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 24px;
+  border: 2px solid #ef4444;
+}
+
+#stormSection h2 { color: #ef4444; margin-top: 0; }
+
+#stormCanvas { height: 340px !important; }
+
+/* ===== RADAR ===== */
+.radar-wrap {
+  max-width: 1300px;
+  margin: 30px auto 0;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.radar-wrap iframe { display: block; width: 100%; height: 500px; }
+
+/* ===== TABLE ===== */
 table {
   width: 90%;
-  margin: 40px auto;
+  margin: 30px auto 0;
   border-collapse: collapse;
-  background: #1e293b;
+  background: var(--bg-card);
+  border-radius: 16px;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 0.85em;
+  border: 1px solid var(--border);
 }
 
-th, td {
-  padding: 10px;
-  border-bottom: 1px solid #334155;
+thead tr { background: var(--bg-inner); }
+
+th {
+  padding: 12px 14px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-size: 0.75em;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
 }
+
+td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+tbody tr:hover { background: rgba(56,189,248,0.04); }
+tbody tr:last-child td { border-bottom: none; }
 </style>
 </head>
 
 <body>
 
-<h1>🌦️ Station météo</h1>
+<h1>🌦️ Station météo
+  <small>46.42964 N — 1.83906 E &nbsp;·&nbsp; Centre-Val de Loire</small>
+</h1>
 
+<!-- ===== BOX PRINCIPALE ===== -->
 <div class="meteo-box">
-  <div class="big-value" id="temp">---</div>
-  <div class="sub-value" id="hum">---</div>
-  <div class="sub-value" id="pres">---</div>
 
+  <!-- 3 colonnes mesures -->
+  <div class="mesures-grid">
+    <div class="mesure-col">
+      <div class="mesure-label">🌡 Temp.</div>
+      <div class="mesure-val" id="temp">---</div>
+      <div class="mesure-unit">°C</div>
+    </div>
+    <div class="mesure-col">
+      <div class="mesure-label">💧 Humid.</div>
+      <div class="mesure-val" id="hum">---</div>
+      <div class="mesure-unit">%</div>
+    </div>
+    <div class="mesure-col">
+      <div class="mesure-label">⏲ Press.</div>
+      <div class="mesure-val" id="pres">---</div>
+      <div class="mesure-unit">hPa</div>
+    </div>
+  </div>
+
+  <!-- Icône + alerte -->
   <div class="weather-icon" id="icon">☀️</div>
   <div class="alert" id="alert">Analyse météo...</div>
 
-  <div class="bar">
-    <div class="fill" id="intensityBar"></div>
+  <!-- Niveaux 1–5 -->
+  <div class="level-dots">
+    <div class="dot" id="dot1"></div>
+    <div class="dot" id="dot2"></div>
+    <div class="dot" id="dot3"></div>
+    <div class="dot" id="dot4"></div>
+    <div class="dot" id="dot5"></div>
   </div>
 
-  <div style="margin-top:15px; font-size:0.9em;">Score atmosphérique global</div>
-  <div class="bar">
-  <div class="fill" id="globalBar"></div>
+  <!-- Barres -->
+  <div class="bar-wrap">
+    <div class="bar-label-row">
+      <span>Score intensité surface</span>
+      <span id="intensityPct">0 %</span>
+    </div>
+    <div class="bar"><div class="fill" id="intensityBar"></div></div>
   </div>
 
-<div style="margin-top:20px; font-size:0.95em;">
-  <div id="stormVector">Vent cellule : --</div>
-  <div id="stormArrow" style="font-size:2.2em; margin:5px 0;">⬆️</div>
-  <div id="stormDirection">Orage : --</div>
-  <div id="stormETA">Arrivée estimée (10 km) : --</div>
-  <div id="shearInfo">Cisaillement vertical : --</div>
-  <div id="stormReal" style="margin-top:5px;">Activité : --</div>
+  <div class="bar-wrap">
+    <div class="bar-label-row">
+      <span>Score atmosphérique global</span>
+      <span id="globalPct">0 %</span>
+    </div>
+    <div class="bar"><div class="fill" id="globalBar"></div></div>
+  </div>
+
+  <!-- Vecteur cellule -->
+  <div class="vector-block">
+    <div id="stormVector">Vent cellule : --</div>
+    <span class="arrow-big" id="stormArrow">⬆️</span>
+    <div id="stormDirection">Direction déplacement : --</div>
+    <div id="stormETA">Arrivée estimée (10 km) : --</div>
+    <div id="shearInfo">Cisaillement vertical : --</div>
+    <div id="stormTrend">Tendance : --</div>
+    <div id="stormReal">Activité : --</div>
+  </div>
+
+  <!-- Profil atmosphérique -->
+  <div class="atmo-grid">
+    <div class="atmo-item">
+      <div class="atmo-name">CAPE</div>
+      <div class="atmo-val" id="atmo-cape">---</div>
+      <div class="atmo-interp" id="atmo-cape-i">--</div>
+    </div>
+    <div class="atmo-item">
+      <div class="atmo-name">Lifted Index</div>
+      <div class="atmo-val" id="atmo-li">---</div>
+      <div class="atmo-interp" id="atmo-li-i">--</div>
+    </div>
+    <div class="atmo-item">
+      <div class="atmo-name">K Index</div>
+      <div class="atmo-val" id="atmo-k">---</div>
+      <div class="atmo-interp" id="atmo-k-i">--</div>
+    </div>
+    <div class="atmo-item">
+      <div class="atmo-name">Hélicité 0–3km</div>
+      <div class="atmo-val" id="atmo-hel">N/A</div>
+      <div class="atmo-interp">Non dispo (gratuit)</div>
+    </div>
+  </div>
+
+  <!-- Date/heure précise -->
+  <div class="update" id="status">
+    <span class="dot-live"></span>Chargement...
+  </div>
+
 </div>
-  
-  <div class="update" id="status">Chargement...</div>
+<!-- fin meteo-box -->
+
+
+<!-- ===== GRAPHIQUE ORAGE (conditionnel) ===== -->
+<div id="stormSection">
+  <h2>⚡ Suivi orage en cours — dernière heure</h2>
+  <p style="font-family:var(--mono); font-size:0.8em; color:var(--muted); margin-bottom:15px;">
+    Température · Humidité · Pression — résolution 1 min
+  </p>
+  <canvas id="stormCanvas"></canvas>
 </div>
 
-<h2>📈 Température — dernières 24h</h2>
-<canvas id="chart24h"></canvas>
 
-<h2>📊 Température — 7 derniers jours</h2>
-<canvas id="chart7j"></canvas>
+<!-- ===== GRAPHIQUE JOUR ===== -->
+<h2>📈 Température — aujourd'hui (moyenne 15 min)</h2>
+<div class="chart-wrap">
+  <canvas id="chart24h"></canvas>
+</div>
 
+
+<!-- ===== GRAPHIQUE 7 JOURS ===== -->
+<h2>📊 Température — 7 derniers jours (min / moy / max)</h2>
+<div class="chart-wrap">
+  <canvas id="chart7j"></canvas>
+</div>
+
+
+<!-- ===== RADAR ===== -->
 <h2>📡 Radar pluie temps réel</h2>
-<iframe 
-  width="100%" 
-  height="500"
-  style="border-radius:15px; margin-top:20px;"
-  src="https://www.rainviewer.com/map.html?loc=46.42964,1.83906,8&oFa=1&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=3&o=83&lm=1&layer=radar&sm=1&sn=1">
-</iframe>  
-  
+<div class="radar-wrap">
+  <iframe
+    src="https://www.rainviewer.com/map.html?loc=46.42964,1.83906,8&oFa=1&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=3&o=83&lm=1&layer=radar&sm=1&sn=1"
+    title="Radar pluie RainViewer">
+  </iframe>
+</div>
+
+
+<!-- ===== HISTORIQUE ===== -->
 <h2>📋 Historique</h2>
 <table>
-<thead>
-<tr>
-<th>Date</th>
-<th>Température</th>
-<th>Humidité</th>
-<th>Pression</th>
-</tr>
-</thead>
-<tbody id="tableBody"></tbody>
+  <thead>
+    <tr>
+      <th>Date et heure</th>
+      <th>Température (°C)</th>
+      <th>Humidité (%)</th>
+      <th>Pression (hPa)</th>
+    </tr>
+  </thead>
+  <tbody id="tableBody"></tbody>
 </table>
 
+
+<!-- ===== JAVASCRIPT ===== -->
 <script>
-const url = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
 
-let chart24h, chart7j;
+/* ============================================================
+   CONFIG
+   ============================================================ */
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
+const LAT  = 46.42964;
+const LON  = 1.83906;
+const SEUIL_ORAGE = 65; // Score global au-delà duquel le graphique orage s'affiche
 
-async function loadData(){
-  const res = await fetch(url);
-  const raw = await res.json();
-  const data = Array.isArray(raw) ? raw : [raw];
-  if (data.length < 3) return;
+/* ============================================================
+   UTILITAIRES
+   ============================================================ */
+function degToRad(d) { return d * Math.PI / 180; }
+function radToDeg(r) { return r * 180 / Math.PI; }
 
-  const last = data[data.length-1];
-  const prev = data[data.length-3];
-
-  document.getElementById("temp").textContent = last.temperature + " °C";
-  document.getElementById("hum").textContent = "💧 Humidité : " + last.humidity + " %";
-  document.getElementById("pres").textContent = "⏲️ Pression : " + last.pressure + " hPa";
-  document.getElementById("status").textContent =
-    "Dernière mise à jour aujourd’hui : " + new Date(last.timestamp).toLocaleString();
-
-  // --- ANALYSE ---
-  const dP = prev.pressure - last.pressure;
-  const score = Math.min(100, Math.max(0, dP * 40 + last.humidity * 0.3));
-  document.getElementById("intensityBar").style.width = score + "%";
-  
-  // ===== ACTIVITÉ ORAGEUSE V2 =====
-
-  function computeStormActivity({
-    globalScore,
-    humidity,
-    dP,
-    cape,
-    shear
-  }){
-
-    let level = 0;
-    let text = "Calme";
-    let icon = "☀️";
-
-    // --- NIVEAU 1 : instabilité ---
-    if(globalScore > 40 || cape > 300){
-      level = 1;
-      text = "Atmosphère instable";
-      icon = "🌦️";
-    }
-
-    // --- NIVEAU 2 : convection probable ---
-    if(globalScore > 55 && humidity > 65 && dP > 0.5){
-      level = 2;
-      text = "⛈️ Développement convectif probable";
-      icon = "⛈️";
-    }
-
-    // --- NIVEAU 3 : orage actif probable ---
-    if(globalScore > 65 && cape > 800 && humidity > 70){
-      level = 3;
-      text = "🌩️ Orage probable en formation";
-      icon = "🌩️";
-    }
-
-    // --- NIVEAU 4 : orage organisé ---
-    if(globalScore > 75 && cape > 1200 && shear > 20){
-      level = 4;
-      text = "⚡ Orage organisé (structure active)";
-      icon = "⚡";
-    }
-
-    // --- NIVEAU 5 : potentiel sévère ---
-    if(globalScore > 85 && cape > 1800 && shear > 25 && dP > 1){
-      level = 5;
-      text = "🚨 Risque orage sévère (rafales / grêle)";
-      icon = "🚨";
-    }
-
-    return {level, text, icon};
-  }
-  
-  let icon="☀️", text="Beau temps stable";
-  if(score>80){icon="🌩️";text="Orage intense possible";}
-  else if(score>60){icon="⛈️";text="Orage probable";}
-  else if(score>40){icon="🌧️";text="Pluie possible";}
-  else if(score>25){icon="🌤️";text="Instabilité légère";}
-  document.getElementById("icon").textContent=icon;
-  document.getElementById("alert").textContent=text;
-  
-  // ===== DIRECTION ORAGE INTELLIGENTE =====
-
-  // tendance pression
-  const pressureTrend = prev.pressure - last.pressure;
-
-  // tendance humidité
-  const humidityTrend = last.humidity - prev.humidity;
-
-  // score dynamique
-  let stormTrend = "stable";
-
-  if(pressureTrend > 0.8 && humidityTrend > 2){
-    stormTrend = "renforcement";
-  }
-  else if(pressureTrend < 0.2){
-    stormTrend = "affaiblissement";
-  }
-
-  // vitesse estimée
-  let speed = "lente";
-
-  if(globalScoreV2 > 70) speed = "rapide";
-  if(globalScoreV2 > 85) speed = "très rapide";
-
-  // direction = ta flèche actuelle
-  const direction = document.getElementById("windArrow").textContent;
-
-  // affichage
-  document.getElementById("stormDirection").textContent =
-    `Orage : ${direction} ${stormTrend} (${speed})`;
-  
-  const lat = 46.42964;
-  const lon = 1.83906;
-
-function degToRad(d){return d*Math.PI/180;}
-function radToDeg(r){return r*180/Math.PI;}
-
-function vectorAverage(speed1,dir1,speed2,dir2){
-  const u1=speed1*Math.cos(degToRad(dir1));
-  const v1=speed1*Math.sin(degToRad(dir1));
-  const u2=speed2*Math.cos(degToRad(dir2));
-  const v2=speed2*Math.sin(degToRad(dir2));
-  const u=(u1+u2)/2;
-  const v=(v1+v2)/2;
-  const speed=Math.sqrt(u*u+v*v);
-  let dir=radToDeg(Math.atan2(v,u));
-  if(dir<0) dir+=360;
-  return {speed,dir};
+function vectorAverage(s1, d1, s2, d2) {
+  const u = (s1 * Math.cos(degToRad(d1)) + s2 * Math.cos(degToRad(d2))) / 2;
+  const v = (s1 * Math.sin(degToRad(d1)) + s2 * Math.sin(degToRad(d2))) / 2;
+  const speed = Math.sqrt(u * u + v * v);
+  let dir = radToDeg(Math.atan2(v, u));
+  if (dir < 0) dir += 360;
+  return { speed, dir };
 }
 
-function arrowFromDeg(deg){
-  if(deg>=337.5||deg<22.5) return "⬆️";
-  if(deg<67.5) return "↗️";
-  if(deg<112.5) return "➡️";
-  if(deg<157.5) return "↘️";
-  if(deg<202.5) return "⬇️";
-  if(deg<247.5) return "↙️";
-  if(deg<292.5) return "⬅️";
+function arrowFromDeg(deg) {
+  if (deg >= 337.5 || deg < 22.5)  return "⬆️";
+  if (deg < 67.5)                   return "↗️";
+  if (deg < 112.5)                  return "➡️";
+  if (deg < 157.5)                  return "↘️";
+  if (deg < 202.5)                  return "⬇️";
+  if (deg < 247.5)                  return "↙️";
+  if (deg < 292.5)                  return "⬅️";
   return "↖️";
 }
 
-window.latestSurfaceData = {
-  last,
-  prev
-};
-  
-async function loadUpperAtmosphere(){
+/* Le vent météo indique D'OÙ il vient → déplacement cellule = direction opposée */
+function movementDir(deg) { return (deg + 180) % 360; }
 
-  const api = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=windspeed_850hPa,winddirection_850hPa,windspeed_700hPa,winddirection_700hPa,cape,lifted_index,k_index,temperature_500hPa&forecast_days=1`;
-
-  const res = await fetch(api);
-  const data = await res.json();
-
-  const last = window.latestSurfaceData.last;
-  const prev = window.latestSurfaceData.prev;
-
-  // ======== VENTS ALTITUDE (déjà existant) ========
-
-  const s850 = data.hourly.windspeed_850hPa[0];
-  const d850 = data.hourly.winddirection_850hPa[0];
-  const s700 = data.hourly.windspeed_700hPa[0];
-  const d700 = data.hourly.winddirection_700hPa[0];
-
-  const avg = vectorAverage(s850, d850, s700, d700);
-  const shear = Math.abs(s700 - s850);
-
-  let eta = "--";
-  if(avg.speed > 5){
-    const min = Math.round((10 / avg.speed) * 60);
-    eta = min + " min";
+/* ============================================================
+   OPTIONS CHART.JS COMMUNES (thème sombre)
+   ============================================================ */
+const darkOpts = {
+  responsive: true,
+  plugins: {
+    legend: { labels: { color: "#94a3b8", font: { family: "'Share Tech Mono'" } } }
+  },
+  scales: {
+    x: { ticks: { color: "#64748b", maxTicksLimit: 13, font: { family: "'Share Tech Mono'" } }, grid: { color: "#1e3a5f" } },
+    y: { ticks: { color: "#64748b", font: { family: "'Share Tech Mono'" } },                    grid: { color: "#1e3a5f" } }
   }
+};
 
-  document.getElementById("stormVector").textContent =
-    "Vent cellule : " + avg.speed.toFixed(1) + " km/h (" + Math.round(avg.dir) + "°)";
+/* ============================================================
+   ANALYSE ORAGEUSE — niveaux 1–5 — portée globale
+   ============================================================ */
+function computeStormActivity({ globalScore, humidity, dP, cape, shear }) {
+  let level = 0, text = "Calme", icon = "☀️";
 
-  document.getElementById("stormArrow").textContent =
-    arrowFromDeg(avg.dir);
+  if (globalScore > 40 || cape > 300)
+    { level = 1; text = "Atmosphère instable";                  icon = "🌦️"; }
+  if (globalScore > 55 && humidity > 65 && dP > 0.5)
+    { level = 2; text = "⛈️ Développement convectif probable"; icon = "⛈️"; }
+  if (globalScore > 65 && cape > 800 && humidity > 70)
+    { level = 3; text = "🌩️ Orage probable en formation";      icon = "🌩️"; }
+  if (globalScore > 75 && cape > 1200 && shear > 20)
+    { level = 4; text = "⚡ Orage organisé (structure active)"; icon = "⚡"; }
+  if (globalScore > 85 && cape > 1800 && shear > 25 && dP > 1)
+    { level = 5; text = "🚨 Risque orage sévère (rafales / grêle)"; icon = "🚨"; }
 
-  document.getElementById("stormETA").textContent =
-    "Arrivée estimée : " + eta;
-
-  let shearText = "Faible";
-  if(shear > 30) shearText = "Très fort ⚠️";
-  else if(shear > 20) shearText = "Fort";
-  else if(shear > 10) shearText = "Modéré";
-
-  document.getElementById("shearInfo").textContent =
-    "Cisaillement : " + shear.toFixed(1) + " km/h (" + shearText + ")";
-
-
-  // ======== PROFIL ATMOSPHÉRIQUE AVANCÉ ========
-
-  const cape = data.hourly.cape?.[0] ?? 0;
-  const li = data.hourly.lifted_index?.[0] ?? 0;
-  const kIndex = data.hourly.k_index?.[0] ?? 0;
-  const t500 = data.hourly.temperature_500hPa?.[0] ?? 0;
-  const helicity = data.hourly.helicity_0_3km?.[0] ?? 0;
-
-  // ======== ANALYSE CONVECTIVE AVANCÉE ========
-
-  let convScore = 0;
-
-  // CAPE pondération
-  if(cape > 2000) convScore += 40;
-  else if(cape > 1000) convScore += 30;
-  else if(cape > 500) convScore += 20;
-  else if(cape > 200) convScore += 10;
-
-  // Lifted Index
-  if(li < -6) convScore += 25;
-  else if(li < -4) convScore += 20;
-  else if(li < -2) convScore += 10;
-
-  // K Index
-  if(kIndex > 35) convScore += 20;
-  else if(kIndex > 30) convScore += 15;
-  else if(kIndex > 25) convScore += 10;
-
-  // Hélicité
-  if(helicity > 300) convScore += 15;
-  else if(helicity > 150) convScore += 10;
-
-  convScore = Math.min(100, convScore);
-
-  // ===== SCORE GLOBAL V2 =====
-
-  // On récupère le score surface déjà calculé (barre actuelle)
-  const surfaceScore = parseFloat(document.getElementById("intensityBar").style.width) || 0;
-  
-  // Organisation (shear converti en score sur 100)
-  let shearScore = 0;
-  if(shear > 30) shearScore = 100;
-  else if(shear > 20) shearScore = 70;
-  else if(shear > 10) shearScore = 40;
-  else shearScore = 10;
-  
-  // Fusion pondérée
-  let globalScoreV2 = 
-  surfaceScore * 0.4 +
-  convScore * 0.4 +
-  shearScore * 0.2;
-  
-  globalScoreV2 = Math.round(Math.min(100, globalScoreV2));
-  
-  document.getElementById("globalBar").style.width = globalScoreV2 + "%";
-
-  // ===== ACTIVITÉ ORAGEUSE =====
-
-  const dP = prev.pressure - last.pressure;
-
-  const activity = computeStormActivity({
-    globalScore: globalScoreV2,
-    humidity: last.humidity,
-    dP: dP,
-    cape: cape,
-    shear: shear
-  });
-
-  // affichage
-  document.getElementById("stormReal").textContent =
-    "Activité : " + activity.text;
-
-  // debug console
-  console.log("===== ACTIVITÉ V2 =====");
-  console.log(activity);
-  
-  // Interprétation
-  let globalText = "Stable";
-  if(globalScoreV2 > 80) globalText = "⚠️ Risque orage sévère";
-  else if(globalScoreV2 > 60) globalText = "🌩️ Orage probable";
-  else if(globalScoreV2 > 40) globalText = "⛈️ Instable";
-  else if(globalScoreV2 > 25) globalText = "🌦️ Surveillance";
-  
-  // Affichage console uniquement
-  console.log("===== SCORE GLOBAL V2 =====");
-  console.log("Surface :", surfaceScore);
-  console.log("Convectif :", convScore);
-  console.log("Organisation :", shearScore);
-  console.log("Score Global V2 :", globalScoreV2);
-  console.log("Interprétation :", globalText);
-  
-  // ======== INTERPRÉTATION ========
-
-  let advancedText = "Atmosphère stable";
-  if(convScore > 80) advancedText = "⚠️ Potentiel orage sévère";
-  else if(convScore > 60) advancedText = "🌩️ Fort potentiel orageux";
-  else if(convScore > 40) advancedText = "⛈️ Instabilité marquée";
-  else if(convScore > 20) advancedText = "🌦️ Instabilité modérée";
-
-  // On affiche dans la console (pas de changement visuel)
-  console.log("===== PROFIL ATMOSPHÉRIQUE =====");
-  console.log("CAPE :", cape);
-  console.log("Lifted Index :", li);
-  console.log("K Index :", kIndex);
-  console.log("Température 500hPa :", t500);
-  console.log("Hélicité 0-3km :", helicity);
-  console.log("Score convectif avancé :", convScore);
-  console.log("Analyse :", advancedText);
+  return { level, text, icon };
 }
 
-loadUpperAtmosphere();
-setInterval(loadUpperAtmosphere,300000);
+/* ============================================================
+   ÉTAT PARTAGÉ
+   ============================================================ */
+let surfaceData = { last: null, prev: null, surfaceScore: 0, stormData: [], allData: [] };
+let chart24h, chart7j, chartStorm;
 
-  // --- TABLE ---
-  const tbody = document.getElementById("tableBody");
-  tbody.innerHTML="";
-  data.slice(-50).reverse().forEach(d=>{
-    const dt=new Date(d.timestamp);
-    tbody.innerHTML+=`
-    <tr>
-      <td>${dt.toLocaleDateString("fr-FR",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})}</td>
-      <td>${d.temperature}</td>
-      <td>${d.humidity}</td>
-      <td>${d.pressure}</td>
-    </tr>`;
-  });
+/* ============================================================
+   HELPERS GRAPHIQUES
+   ============================================================ */
 
-  // --- GRAPH 24H ---
-  const last24h = data.slice(-144);
-  const labels24h = last24h.map(d=>new Date(d.timestamp).toLocaleTimeString());
-  const temp24h = last24h.map(d=>d.temperature);
+/** Moyenne des mesures par tranche de minutesBin minutes depuis minuit */
+function binByMinutes(data, minutesBin, key) {
+  if (!data.length) return [];
+  const now      = new Date();
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+  const binMs    = minutesBin * 60 * 1000;
+  const total    = Math.floor((now - midnight) / binMs) + 1;
+  const bins     = [];
 
-  if(chart24h) chart24h.destroy();
-  chart24h = new Chart(document.getElementById("chart24h"), {
-    type:"line",
-    data:{
-      labels:labels24h,
-      datasets:[{
-        label:"Température (°C)",
-        data:temp24h,
-        borderColor:"#38bdf8",
-        tension:0.3
-      }]
-    }
-  });
+  for (let i = 0; i < total; i++) {
+    const start = new Date(midnight.getTime() + i * binMs);
+    const end   = new Date(start.getTime() + binMs);
+    const lbl   = start.getHours().toString().padStart(2,"0") + "h" +
+                  start.getMinutes().toString().padStart(2,"0");
 
-  // --- GRAPH 7J ---
-  const last7j = data.slice(-1000);
-  const labels7j = last7j.map(d=>new Date(d.timestamp).toLocaleDateString());
-  const temp7j = last7j.map(d=>d.temperature);
+    const pts = data
+      .filter(d => { const t = new Date(d.timestamp); return t >= start && t < end; })
+      .map(d => parseFloat(d[key]))
+      .filter(v => !isNaN(v));
 
-  if(chart7j) chart7j.destroy();
-  chart7j = new Chart(document.getElementById("chart7j"), {
-    type:"line",
-    data:{
-      labels:labels7j,
-      datasets:[{
-        label:"Température (°C)",
-        data:temp7j,
-        borderColor:"#facc15",
-        tension:0.3
-      }]
-    }
-  });
+    const avg = pts.length ? pts.reduce((a,b)=>a+b,0)/pts.length : null;
+    bins.push({ label: lbl, value: avg !== null ? parseFloat(avg.toFixed(1)) : null });
+  }
+  return bins;
 }
 
-loadData();
-setInterval(loadData,60000);
+/** Min / moy / max par jour sur les 7 derniers jours */
+function binBy7Days(data) {
+  const days = {};
+  data.forEach(d => {
+    const k = new Date(d.timestamp).toLocaleDateString("fr-FR", { weekday:"short", day:"2-digit", month:"2-digit" });
+    if (!days[k]) days[k] = [];
+    const v = parseFloat(d.temperature);
+    if (!isNaN(v)) days[k].push(v);
+  });
+  const labels=[], mins=[], avgs=[], maxs=[];
+  Object.entries(days).slice(-7).forEach(([lbl, vals]) => {
+    if (!vals.length) return;
+    labels.push(lbl);
+    mins.push(parseFloat(Math.min(...vals).toFixed(1)));
+    maxs.push(parseFloat(Math.max(...vals).toFixed(1)));
+    avgs.push(parseFloat((vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1)));
+  });
+  return { labels, mins, avgs, maxs };
+}
+
+/* ============================================================
+   CHARGEMENT DONNÉES SURFACE (Google Sheets)
+   ============================================================ */
+async function loadData() {
+  try {
+    const res  = await fetch(SHEETS_URL);
+    const raw  = await res.json();
+    const data = Array.isArray(raw) ? raw : [raw];
+    if (data.length < 3) { document.getElementById("status").textContent = "Données insuffisantes."; return; }
+
+    const last = data[data.length - 1];
+    const prev = data[data.length - 3];
+
+    /* -- Mesures (valeurs seules, sans unité dans le span) -- */
+    document.getElementById("temp").textContent = parseFloat(last.temperature).toFixed(1);
+    document.getElementById("hum").textContent  = parseFloat(last.humidity).toFixed(0);
+    document.getElementById("pres").textContent = parseFloat(last.pressure).toFixed(1);
+
+    /* -- Date et heure précises de la dernière mesure -- */
+    const dt = new Date(last.timestamp);
+    const dateStr = dt.toLocaleDateString("fr-FR", {
+      weekday: "long", day: "2-digit", month: "long", year: "numeric"
+    });
+    const timeStr = dt.toLocaleTimeString("fr-FR", {
+      hour: "2-digit", minute: "2-digit", second: "2-digit"
+    });
+    document.getElementById("status").innerHTML =
+      `<span class="dot-live"></span>Dernière mesure : ${dateStr} à ${timeStr}`;
+
+    /* -- Score surface -- */
+    const dP = parseFloat(prev.pressure) - parseFloat(last.pressure);
+    const surfaceScore = Math.min(100, Math.max(0, dP * 40 + parseFloat(last.humidity) * 0.3));
+    document.getElementById("intensityBar").style.width = surfaceScore + "%";
+    document.getElementById("intensityPct").textContent  = Math.round(surfaceScore) + " %";
+
+    /* -- Icône provisoire (sera mise à jour par loadUpperAtmosphere) -- */
+    let icon = "☀️", alertText = "Beau temps stable";
+    if      (surfaceScore > 80) { icon = "🌩️"; alertText = "Orage intense possible"; }
+    else if (surfaceScore > 60) { icon = "⛈️"; alertText = "Orage probable"; }
+    else if (surfaceScore > 40) { icon = "🌧️"; alertText = "Pluie possible"; }
+    else if (surfaceScore > 25) { icon = "🌤️"; alertText = "Instabilité légère"; }
+    document.getElementById("icon").textContent  = icon;
+    document.getElementById("alert").textContent = alertText;
+
+    /* -- Partage pour loadUpperAtmosphere -- */
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    surfaceData = {
+      last, prev, surfaceScore, allData: data,
+      stormData: data.filter(d => new Date(d.timestamp) >= oneHourAgo)
+    };
+
+    /* ========================================================
+       GRAPHIQUE JOUR : 00h → maintenant, moyenne 15 min
+       ======================================================== */
+    const todayMidnight = new Date();
+    todayMidnight.setHours(0,0,0,0);
+    const todayData  = data.filter(d => new Date(d.timestamp) >= todayMidnight);
+    const binnedDay  = binByMinutes(todayData, 15, "temperature");
+
+    if (chart24h) chart24h.destroy();
+    chart24h = new Chart(document.getElementById("chart24h"), {
+      type: "line",
+      data: {
+        labels: binnedDay.map(b => b.label),
+        datasets: [{
+          label: "Température (°C) — moy. 15 min",
+          data:  binnedDay.map(b => b.value),
+          borderColor: "#38bdf8",
+          backgroundColor: "rgba(56,189,248,0.07)",
+          borderWidth: 2,
+          tension: 0.35,
+          pointRadius: 3,
+          pointBackgroundColor: "#38bdf8",
+          fill: true,
+          spanGaps: false
+        }]
+      },
+      options: {
+        ...darkOpts,
+        plugins: {
+          ...darkOpts.plugins,
+          tooltip: {
+            callbacks: {
+              label: ctx => ctx.parsed.y !== null
+                ? ctx.parsed.y.toFixed(1) + " °C"
+                : "Pas de données"
+            }
+          }
+        }
+      }
+    });
+
+    /* ========================================================
+       GRAPHIQUE 7 JOURS : min / moy / max par jour
+       ======================================================== */
+    const { labels: l7, mins, avgs, maxs } = binBy7Days(data);
+
+    if (chart7j) chart7j.destroy();
+    chart7j = new Chart(document.getElementById("chart7j"), {
+      type: "line",
+      data: {
+        labels: l7,
+        datasets: [
+          {
+            label: "Minimum (°C)",
+            data: mins,
+            borderColor: "#38bdf8",
+            borderWidth: 2,
+            tension: 0.3,
+            pointRadius: 4,
+            fill: false
+          },
+          {
+            label: "Moyenne (°C)",
+            data: avgs,
+            borderColor: "#facc15",
+            borderWidth: 2.5,
+            tension: 0.3,
+            pointRadius: 5,
+            pointBackgroundColor: "#facc15",
+            fill: false
+          },
+          {
+            label: "Maximum (°C)",
+            data: maxs,
+            borderColor: "#f97316",
+            borderWidth: 2,
+            tension: 0.3,
+            pointRadius: 4,
+            fill: false
+          }
+        ]
+      },
+      options: darkOpts
+    });
+
+    /* ========================================================
+       TABLEAU HISTORIQUE : 50 dernières mesures, date+heure précises
+       ======================================================== */
+    const tbody = document.getElementById("tableBody");
+    tbody.innerHTML = "";
+    data.slice(-50).reverse().forEach(d => {
+      const ddt = new Date(d.timestamp);
+      const dStr = ddt.toLocaleDateString("fr-FR", { weekday:"long", day:"2-digit", month:"2-digit", year:"numeric" });
+      const tStr = ddt.toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit", second:"2-digit" });
+      tbody.innerHTML += `
+        <tr>
+          <td>${dStr} à ${tStr}</td>
+          <td>${parseFloat(d.temperature).toFixed(1)}</td>
+          <td>${parseFloat(d.humidity).toFixed(0)}</td>
+          <td>${parseFloat(d.pressure).toFixed(1)}</td>
+        </tr>`;
+    });
+
+  } catch (err) {
+    console.error("Erreur loadData :", err);
+    document.getElementById("status").textContent = "Erreur chargement données.";
+  }
+}
+
+/* ============================================================
+   CHARGEMENT DONNÉES ALTITUDE (Open-Meteo)
+   ============================================================ */
+async function loadUpperAtmosphere() {
+  try {
+    const api = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}` +
+      `&hourly=windspeed_850hPa,winddirection_850hPa,windspeed_700hPa,winddirection_700hPa,` +
+      `cape,lifted_index,k_index,temperature_500hPa&forecast_days=1&timezone=Europe%2FParis`;
+
+    const res  = await fetch(api);
+    const data = await res.json();
+    const hour = new Date().getHours();
+
+    const s850 = data.hourly.windspeed_850hPa[hour]     ?? 0;
+    const d850 = data.hourly.winddirection_850hPa[hour] ?? 0;
+    const s700 = data.hourly.windspeed_700hPa[hour]     ?? 0;
+    const d700 = data.hourly.winddirection_700hPa[hour] ?? 0;
+    const cape = data.hourly.cape?.[hour]               ?? 0;
+    const li   = data.hourly.lifted_index?.[hour]       ?? 0;
+    const kIdx = data.hourly.k_index?.[hour]            ?? 0;
+
+    const avg      = vectorAverage(s850, d850, s700, d700);
+    const shear    = Math.abs(s700 - s850);
+    const moveDeg  = movementDir(avg.dir);
+
+    /* -- Vecteur -- */
+    let eta = "--";
+    if (avg.speed > 3) { const m = Math.round((10/avg.speed)*60); eta = m+" min"; }
+
+    document.getElementById("stormVector").textContent =
+      "Vent cellule : " + avg.speed.toFixed(1) + " km/h (" + Math.round(avg.dir) + "°)";
+    document.getElementById("stormArrow").textContent     = arrowFromDeg(moveDeg);
+    document.getElementById("stormETA").textContent       = "Arrivée estimée (10 km) : " + eta;
+    document.getElementById("stormDirection").textContent =
+      "Direction déplacement : " + arrowFromDeg(moveDeg) + " (" + Math.round(moveDeg) + "°)";
+
+    let shearTxt = "Faible";
+    if      (shear > 30) shearTxt = "Très fort ⚠️";
+    else if (shear > 20) shearTxt = "Fort";
+    else if (shear > 10) shearTxt = "Modéré";
+    document.getElementById("shearInfo").textContent =
+      "Cisaillement : " + shear.toFixed(1) + " km/h (" + shearTxt + ")";
+
+    /* -- Profil atmosphérique -- */
+    document.getElementById("atmo-cape").textContent   = Math.round(cape) + " J/kg";
+    document.getElementById("atmo-cape-i").textContent =
+      cape > 2000 ? "Extrême ⚠️" : cape > 1000 ? "Fort" : cape > 500 ? "Modéré" : cape > 200 ? "Faible" : "Nul";
+
+    document.getElementById("atmo-li").textContent   = li.toFixed(1);
+    document.getElementById("atmo-li-i").textContent =
+      li < -6 ? "Extrême ⚠️" : li < -4 ? "Très instable" : li < -2 ? "Instable" : li < 0 ? "Lég. instable" : "Stable";
+
+    document.getElementById("atmo-k").textContent   = Math.round(kIdx);
+    document.getElementById("atmo-k-i").textContent =
+      kIdx > 35 ? "Orage probable ⚠️" : kIdx > 30 ? "Risque élevé" : kIdx > 25 ? "Risque modéré" : "Faible risque";
+
+    /* -- Scores -- */
+    let convScore = 0;
+    if      (cape > 2000) convScore += 40;
+    else if (cape > 1000) convScore += 30;
+    else if (cape > 500)  convScore += 20;
+    else if (cape > 200)  convScore += 10;
+    if      (li < -6)     convScore += 25;
+    else if (li < -4)     convScore += 20;
+    else if (li < -2)     convScore += 10;
+    if      (kIdx > 35)   convScore += 20;
+    else if (kIdx > 30)   convScore += 15;
+    else if (kIdx > 25)   convScore += 10;
+    convScore = Math.min(100, convScore);
+
+    const shearScore = shear > 30 ? 100 : shear > 20 ? 70 : shear > 10 ? 40 : 10;
+    const { surfaceScore } = surfaceData;
+    const globalScoreV2 = Math.round(Math.min(100,
+      surfaceScore * 0.4 + convScore * 0.4 + shearScore * 0.2
+    ));
+
+    document.getElementById("globalBar").style.width = globalScoreV2 + "%";
+    document.getElementById("globalPct").textContent  = globalScoreV2 + " %";
+
+    /* -- Tendance -- */
+    const { last, prev } = surfaceData;
+    let dP = 0;
+    if (last && prev) {
+      dP = parseFloat(prev.pressure) - parseFloat(last.pressure);
+      const humTrend = parseFloat(last.humidity) - parseFloat(prev.humidity);
+      let trend = "Stable";
+      if      (dP > 0.8 && humTrend > 2) trend = "⬆️ Renforcement";
+      else if (dP < 0.2)                  trend = "⬇️ Affaiblissement";
+      else if (dP > 0.4)                  trend = "↗️ Légère hausse";
+      document.getElementById("stormTrend").textContent = "Tendance : " + trend;
+    }
+
+    /* -- Activité finale -- */
+    const activity = computeStormActivity({
+      globalScore: globalScoreV2,
+      humidity:    last ? parseFloat(last.humidity) : 0,
+      dP, cape, shear
+    });
+
+    document.getElementById("icon").textContent      = activity.icon;
+    document.getElementById("alert").textContent     = activity.text;
+    document.getElementById("stormReal").textContent = "Activité niveau " + activity.level + "/5";
+
+    /* -- Points niveaux -- */
+    for (let i = 1; i <= 5; i++) {
+      const dot = document.getElementById("dot" + i);
+      dot.className = "dot";
+      if (i <= activity.level) dot.classList.add("on-" + i);
+    }
+
+    /* ========================================================
+       GRAPHIQUE ORAGE : apparaît si globalScoreV2 > SEUIL_ORAGE
+       ======================================================== */
+    const stormSection = document.getElementById("stormSection");
+    const stormData    = surfaceData.stormData || [];
+
+    if (globalScoreV2 > SEUIL_ORAGE && stormData.length >= 2) {
+      stormSection.style.display = "block";
+
+      const sLabels = stormData.map(d =>
+        new Date(d.timestamp).toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit" })
+      );
+
+      if (chartStorm) chartStorm.destroy();
+      chartStorm = new Chart(document.getElementById("stormCanvas"), {
+        type: "line",
+        data: {
+          labels: sLabels,
+          datasets: [
+            {
+              label: "Température (°C)",
+              data: stormData.map(d => parseFloat(d.temperature)),
+              borderColor: "#f97316",
+              backgroundColor: "rgba(249,115,22,0.06)",
+              borderWidth: 2, tension: 0.2, pointRadius: 2,
+              yAxisID: "yTemp", fill: true
+            },
+            {
+              label: "Humidité (%)",
+              data: stormData.map(d => parseFloat(d.humidity)),
+              borderColor: "#38bdf8",
+              backgroundColor: "rgba(56,189,248,0.06)",
+              borderWidth: 2, tension: 0.2, pointRadius: 2,
+              yAxisID: "yHum", fill: true
+            },
+            {
+              label: "Pression (hPa)",
+              data: stormData.map(d => parseFloat(d.pressure)),
+              borderColor: "#a78bfa",
+              borderWidth: 2, tension: 0.2, pointRadius: 2,
+              yAxisID: "yPres", fill: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { labels: { color: "#94a3b8", font: { family: "'Share Tech Mono'" } } } },
+          scales: {
+            x:     { ticks: { color:"#64748b", maxTicksLimit:15, font:{family:"'Share Tech Mono'"} }, grid:{color:"#1e3a5f"} },
+            yTemp: { position:"left",   ticks:{color:"#f97316"}, grid:{color:"#1e3a5f"}, title:{display:true,text:"Temp °C",color:"#f97316"} },
+            yHum:  { position:"right",  ticks:{color:"#38bdf8"}, grid:{drawOnChartArea:false}, title:{display:true,text:"Humid. %",color:"#38bdf8"} },
+            yPres: { position:"right",  ticks:{color:"#a78bfa"}, grid:{drawOnChartArea:false}, title:{display:true,text:"Pression hPa",color:"#a78bfa"} }
+          }
+        }
+      });
+
+    } else {
+      stormSection.style.display = "none";
+    }
+
+    /* Console debug */
+    console.log("=== SCORE V2 ===", globalScoreV2, "| Surface:", surfaceScore, "| Conv:", convScore, "| Org:", shearScore);
+    console.log("CAPE:", cape, "LI:", li, "K:", kIdx);
+
+  } catch (err) {
+    console.error("Erreur loadUpperAtmosphere :", err);
+  }
+}
+
+/* ============================================================
+   DÉMARRAGE
+   ============================================================ */
+async function init() {
+  await loadData();
+  await loadUpperAtmosphere();
+}
+
+init();
+
+/* Rafraîchissement complet toutes les 60 s */
+setInterval(async () => {
+  await loadData();
+  await loadUpperAtmosphere();
+}, 60000);
+
+/* Open-Meteo en plus toutes les 5 min */
+setInterval(loadUpperAtmosphere, 300000);
+
 </script>
-
 </body>
 </html>
-
-
-
-
-
-
-
