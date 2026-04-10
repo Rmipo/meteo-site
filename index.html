@@ -113,6 +113,7 @@ th, td {
 <div style="margin-top:20px; font-size:0.95em;">
   <div id="stormVector">Vent cellule : --</div>
   <div id="stormArrow" style="font-size:2.2em; margin:5px 0;">⬆️</div>
+  <div id="stormDirection">Orage : --</div>
   <div id="stormETA">Arrivée estimée (10 km) : --</div>
   <div id="shearInfo">Cisaillement vertical : --</div>
   <div id="stormReal" style="margin-top:5px;">Activité : --</div>
@@ -232,7 +233,38 @@ async function loadData(){
   else if(score>25){icon="🌤️";text="Instabilité légère";}
   document.getElementById("icon").textContent=icon;
   document.getElementById("alert").textContent=text;
+  
+  // ===== DIRECTION ORAGE INTELLIGENTE =====
 
+  // tendance pression
+  const pressureTrend = prev.pressure - last.pressure;
+
+  // tendance humidité
+  const humidityTrend = last.humidity - prev.humidity;
+
+  // score dynamique
+  let stormTrend = "stable";
+
+  if(pressureTrend > 0.8 && humidityTrend > 2){
+    stormTrend = "renforcement";
+  }
+  else if(pressureTrend < 0.2){
+    stormTrend = "affaiblissement";
+  }
+
+  // vitesse estimée
+  let speed = "lente";
+
+  if(globalScoreV2 > 70) speed = "rapide";
+  if(globalScoreV2 > 85) speed = "très rapide";
+
+  // direction = ta flèche actuelle
+  const direction = document.getElementById("windArrow").textContent;
+
+  // affichage
+  document.getElementById("stormDirection").textContent =
+    `Orage : ${direction} ${stormTrend} (${speed})`;
+  
   const lat = 46.42964;
   const lon = 1.83906;
 
