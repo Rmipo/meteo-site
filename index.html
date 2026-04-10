@@ -234,7 +234,7 @@ async function loadData(){
   document.getElementById("alert").textContent=text;
 
   const lat = 46.42964;
-const lon = 1.83906;
+  const lon = 1.83906;
 
 function degToRad(d){return d*Math.PI/180;}
 function radToDeg(r){return r*180/Math.PI;}
@@ -263,12 +263,20 @@ function arrowFromDeg(deg){
   return "↖️";
 }
 
+window.latestSurfaceData = {
+  last,
+  prev
+};
+  
 async function loadUpperAtmosphere(){
 
   const api = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=windspeed_850hPa,winddirection_850hPa,windspeed_700hPa,winddirection_700hPa,cape,lifted_index,k_index,temperature_500hPa&forecast_days=1`;
 
   const res = await fetch(api);
   const data = await res.json();
+
+  const last = window.latestSurfaceData.last;
+  const prev = window.latestSurfaceData.prev;
 
   // ======== VENTS ALTITUDE (déjà existant) ========
 
@@ -359,6 +367,26 @@ async function loadUpperAtmosphere(){
   globalScoreV2 = Math.round(Math.min(100, globalScoreV2));
   
   document.getElementById("globalBar").style.width = globalScoreV2 + "%";
+
+  // ===== ACTIVITÉ ORAGEUSE =====
+
+  const dP = prev.pressure - last.pressure;
+
+  const activity = computeStormActivity({
+    globalScore: globalScoreV2,
+    humidity: last.humidity,
+    dP: dP,
+    cape: cape,
+    shear: shear
+  });
+
+  // affichage
+  document.getElementById("stormReal").textContent =
+    "Activité : " + activity.text;
+
+  // debug console
+  console.log("===== ACTIVITÉ V2 =====");
+  console.log(activity);
   
   // Interprétation
   let globalText = "Stable";
