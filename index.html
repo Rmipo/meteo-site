@@ -120,16 +120,8 @@ h2 {
 }
 
 /* ===== ICÔNE + ALERTE ===== */
-.weather-icon {
-  font-size: 3em;
-  margin: 10px 0;
-}
-
-.alert {
-  font-size: 1.3em;
-  font-weight: bold;
-  margin-top: 10px;
-}
+.weather-icon { font-size: 3em; margin: 10px 0; }
+.alert { font-size: 1.3em; font-weight: bold; margin-top: 10px; }
 
 /* ===== NIVEAUX ===== */
 .level-dots {
@@ -283,8 +275,164 @@ canvas {
 }
 
 #stormSection h2 { color: #ef4444; margin-top: 0; }
-
 #stormCanvas { height: 340px !important; }
+
+/* ===== BLOC ÉCLAIRS ===== */
+.lightning-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  width: 420px;
+  margin: 30px auto 0;
+  padding: 24px;
+  position: relative;
+  text-align: left;
+  font-family: var(--mono);
+}
+
+.lightning-box::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 10%; right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #eab308, transparent);
+  opacity: 0.6;
+}
+
+.lightning-title {
+  font-family: var(--font);
+  font-size: 1.1em;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #eab308;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.lightning-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.lightning-item {
+  background: var(--bg-inner);
+  border-radius: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+}
+
+.lightning-item .l-name {
+  font-size: 0.62em;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+
+.lightning-item .l-val {
+  font-size: 1.3em;
+  font-weight: 700;
+  color: #eab308;
+}
+
+.lightning-item .l-sub {
+  font-size: 0.7em;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* Tendance éclairs */
+.lightning-trend {
+  font-size: 0.82em;
+  color: var(--text);
+  padding: 10px 12px;
+  background: var(--bg-inner);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  margin-bottom: 10px;
+  line-height: 1.7;
+}
+
+/* Nowcast radar */
+.nowcast-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  width: 420px;
+  margin: 20px auto 0;
+  padding: 24px;
+  position: relative;
+  text-align: left;
+  font-family: var(--mono);
+}
+
+.nowcast-box::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 10%; right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #a78bfa, transparent);
+  opacity: 0.6;
+}
+
+.nowcast-title {
+  font-family: var(--font);
+  font-size: 1.1em;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #a78bfa;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.nowcast-frames {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.nowcast-frame {
+  flex: 1;
+  background: var(--bg-inner);
+  border-radius: 10px;
+  padding: 10px 8px;
+  border: 1px solid var(--border);
+  text-align: center;
+}
+
+.nowcast-frame .nf-time {
+  font-size: 0.65em;
+  color: var(--muted);
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+
+.nowcast-frame .nf-val {
+  font-size: 1.1em;
+  font-weight: 700;
+  color: #a78bfa;
+}
+
+.nowcast-frame .nf-sub {
+  font-size: 0.65em;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.nowcast-frame.active-frame {
+  border-color: #a78bfa;
+}
+
+.nowcast-status {
+  font-size: 0.8em;
+  color: var(--muted);
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  line-height: 1.6;
+}
 
 /* ===== RADAR ===== */
 .radar-wrap {
@@ -341,8 +489,6 @@ tbody tr:last-child td { border-bottom: none; }
 
 <!-- ===== BOX PRINCIPALE ===== -->
 <div class="meteo-box">
-
-  <!-- 3 colonnes mesures -->
   <div class="mesures-grid">
     <div class="mesure-col">
       <div class="mesure-label">🌡 Temp.</div>
@@ -361,11 +507,9 @@ tbody tr:last-child td { border-bottom: none; }
     </div>
   </div>
 
-  <!-- Icône + alerte -->
   <div class="weather-icon" id="icon">☀️</div>
   <div class="alert" id="alert">Analyse météo...</div>
 
-  <!-- Niveaux 1–5 -->
   <div class="level-dots">
     <div class="dot" id="dot1"></div>
     <div class="dot" id="dot2"></div>
@@ -374,7 +518,6 @@ tbody tr:last-child td { border-bottom: none; }
     <div class="dot" id="dot5"></div>
   </div>
 
-  <!-- Barres -->
   <div class="bar-wrap">
     <div class="bar-label-row">
       <span>Score intensité surface</span>
@@ -391,7 +534,6 @@ tbody tr:last-child td { border-bottom: none; }
     <div class="bar"><div class="fill" id="globalBar"></div></div>
   </div>
 
-  <!-- Vecteur cellule -->
   <div class="vector-block">
     <div id="stormVector">Vent cellule : --</div>
     <span class="arrow-big" id="stormArrow">⬆️</span>
@@ -402,7 +544,6 @@ tbody tr:last-child td { border-bottom: none; }
     <div id="stormReal">Activité : --</div>
   </div>
 
-  <!-- Profil atmosphérique -->
   <div class="atmo-grid">
     <div class="atmo-item">
       <div class="atmo-name">CAPE</div>
@@ -426,13 +567,80 @@ tbody tr:last-child td { border-bottom: none; }
     </div>
   </div>
 
-  <!-- Date/heure précise -->
   <div class="update" id="status">
     <span class="dot-live"></span>Chargement...
   </div>
-
 </div>
-<!-- fin meteo-box -->
+
+
+<!-- ===== BLOC ÉCLAIRS BLITZORTUNG ===== -->
+<div class="lightning-box">
+  <div class="lightning-title">⚡ Activité électrique — 100 km</div>
+
+  <div class="lightning-grid">
+    <div class="lightning-item">
+      <div class="l-name">Plus proche</div>
+      <div class="l-val" id="lgt-closest">--</div>
+      <div class="l-sub" id="lgt-closest-time">--</div>
+    </div>
+    <div class="lightning-item">
+      <div class="l-name">Éclairs 10 min</div>
+      <div class="l-val" id="lgt-count10">--</div>
+      <div class="l-sub">dans 100 km</div>
+    </div>
+    <div class="lightning-item">
+      <div class="l-name">Éclairs 30 min</div>
+      <div class="l-val" id="lgt-count30">--</div>
+      <div class="l-sub">dans 100 km</div>
+    </div>
+    <div class="lightning-item">
+      <div class="l-name">Éclairs 60 min</div>
+      <div class="l-val" id="lgt-count60">--</div>
+      <div class="l-sub">dans 100 km</div>
+    </div>
+  </div>
+
+  <div class="lightning-trend" id="lgt-trend">
+    Tendance : Chargement...
+  </div>
+
+  <div style="font-size:0.72em; color:var(--muted); margin-top:6px;" id="lgt-status">
+    Source : Blitzortung.org — actualisation 60 s
+  </div>
+</div>
+
+
+<!-- ===== BLOC NOWCAST RAINVIEWER ===== -->
+<div class="nowcast-box">
+  <div class="nowcast-title">📡 Nowcast radar — prévision +30 min</div>
+
+  <div class="nowcast-frames">
+    <div class="nowcast-frame active-frame">
+      <div class="nf-time">Maintenant</div>
+      <div class="nf-val" id="nf-now">--</div>
+      <div class="nf-sub" id="nf-now-sub">--</div>
+    </div>
+    <div class="nowcast-frame">
+      <div class="nf-time">+10 min</div>
+      <div class="nf-val" id="nf-10">--</div>
+      <div class="nf-sub" id="nf-10-sub">--</div>
+    </div>
+    <div class="nowcast-frame">
+      <div class="nf-time">+20 min</div>
+      <div class="nf-val" id="nf-20">--</div>
+      <div class="nf-sub" id="nf-20-sub">--</div>
+    </div>
+    <div class="nowcast-frame">
+      <div class="nf-time">+30 min</div>
+      <div class="nf-val" id="nf-30">--</div>
+      <div class="nf-sub" id="nf-30-sub">--</div>
+    </div>
+  </div>
+
+  <div class="nowcast-status" id="nowcast-status">
+    Chargement des données radar RainViewer...
+  </div>
+</div>
 
 
 <!-- ===== GRAPHIQUE ORAGE (conditionnel) ===== -->
@@ -445,8 +653,8 @@ tbody tr:last-child td { border-bottom: none; }
 </div>
 
 
-<!-- ===== GRAPHIQUE JOUR ===== -->
-<h2>📈 Température — aujourd'hui (moyenne 15 min)</h2>
+<!-- ===== GRAPHIQUE JOUR (00h → 23h45, 96 bins fixes de 15 min) ===== -->
+<h2 id="chart24h-title">📈 Température — aujourd'hui (moyenne 15 min)</h2>
 <div class="chart-wrap">
   <canvas id="chart24h"></canvas>
 </div>
@@ -484,16 +692,20 @@ tbody tr:last-child td { border-bottom: none; }
 </table>
 
 
-<!-- ===== JAVASCRIPT ===== -->
 <script>
-
 /* ============================================================
-   CONFIG
+   CONFIG — MODIFIER ICI SI BESOIN
    ============================================================ */
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
+
+// ⚠️ PROXY BLITZORTUNG — à remplir après avoir ajouté la fonction dans Apps Script
+// Laisser vide ("") si pas encore configuré → le bloc affichera "Non configuré"
+const BLITZORTUNG_PROXY_URL = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
+
 const LAT  = 46.42964;
 const LON  = 1.83906;
-const SEUIL_ORAGE = 65; // Score global au-delà duquel le graphique orage s'affiche
+const RAYON_KM   = 100;  // rayon éclairs
+const SEUIL_ORAGE = 65;
 
 /* ============================================================
    UTILITAIRES
@@ -502,9 +714,9 @@ function degToRad(d) { return d * Math.PI / 180; }
 function radToDeg(r) { return r * 180 / Math.PI; }
 
 function vectorAverage(s1, d1, s2, d2) {
-  const u = (s1 * Math.cos(degToRad(d1)) + s2 * Math.cos(degToRad(d2))) / 2;
-  const v = (s1 * Math.sin(degToRad(d1)) + s2 * Math.sin(degToRad(d2))) / 2;
-  const speed = Math.sqrt(u * u + v * v);
+  const u = (s1*Math.cos(degToRad(d1)) + s2*Math.cos(degToRad(d2))) / 2;
+  const v = (s1*Math.sin(degToRad(d1)) + s2*Math.sin(degToRad(d2))) / 2;
+  const speed = Math.sqrt(u*u + v*v);
   let dir = radToDeg(Math.atan2(v, u));
   if (dir < 0) dir += 360;
   return { speed, dir };
@@ -521,11 +733,22 @@ function arrowFromDeg(deg) {
   return "↖️";
 }
 
-/* Le vent météo indique D'OÙ il vient → déplacement cellule = direction opposée */
 function movementDir(deg) { return (deg + 180) % 360; }
 
+/**
+ * Distance Haversine entre deux points GPS → kilomètres
+ */
+function haversine(lat1, lon1, lat2, lon2) {
+  const R    = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a    = Math.sin(dLat/2)**2 +
+               Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
 /* ============================================================
-   OPTIONS CHART.JS COMMUNES (thème sombre)
+   OPTIONS CHART.JS COMMUNES
    ============================================================ */
 const darkOpts = {
   responsive: true,
@@ -539,22 +762,20 @@ const darkOpts = {
 };
 
 /* ============================================================
-   ANALYSE ORAGEUSE — niveaux 1–5 — portée globale
+   ANALYSE ORAGEUSE niveaux 1–5
    ============================================================ */
 function computeStormActivity({ globalScore, humidity, dP, cape, shear }) {
   let level = 0, text = "Calme", icon = "☀️";
-
   if (globalScore > 40 || cape > 300)
-    { level = 1; text = "Atmosphère instable";                  icon = "🌦️"; }
+    { level=1; text="Atmosphère instable"; icon="🌦️"; }
   if (globalScore > 55 && humidity > 65 && dP > 0.5)
-    { level = 2; text = "⛈️ Développement convectif probable"; icon = "⛈️"; }
+    { level=2; text="⛈️ Développement convectif probable"; icon="⛈️"; }
   if (globalScore > 65 && cape > 800 && humidity > 70)
-    { level = 3; text = "🌩️ Orage probable en formation";      icon = "🌩️"; }
+    { level=3; text="🌩️ Orage probable en formation"; icon="🌩️"; }
   if (globalScore > 75 && cape > 1200 && shear > 20)
-    { level = 4; text = "⚡ Orage organisé (structure active)"; icon = "⚡"; }
+    { level=4; text="⚡ Orage organisé (structure active)"; icon="⚡"; }
   if (globalScore > 85 && cape > 1800 && shear > 25 && dP > 1)
-    { level = 5; text = "🚨 Risque orage sévère (rafales / grêle)"; icon = "🚨"; }
-
+    { level=5; text="🚨 Risque orage sévère (rafales / grêle)"; icon="🚨"; }
   return { level, text, icon };
 }
 
@@ -564,37 +785,94 @@ function computeStormActivity({ globalScore, humidity, dP, cape, shear }) {
 let surfaceData = { last: null, prev: null, surfaceScore: 0, stormData: [], allData: [] };
 let chart24h, chart7j, chartStorm;
 
-/* ============================================================
-   HELPERS GRAPHIQUES
-   ============================================================ */
+/* Historique éclairs pour la tendance (gardé en mémoire côté JS) */
+let lightningHistory = []; // [ { ts: timestamp_ms, dist: km }, ... ]
 
-/** Moyenne des mesures par tranche de minutesBin minutes depuis minuit */
-function binByMinutes(data, minutesBin, key) {
-  if (!data.length) return [];
+/* ============================================================
+   GRAPHIQUE JOUR — 96 bins fixes 00h00 → 23h45
+   ============================================================ */
+function buildChart24h(data) {
+  /* Génère exactement 96 labels fixes : 00h00, 00h15, ... 23h45 */
+  const labels = [];
+  for (let i = 0; i < 96; i++) {
+    const h = Math.floor(i / 4).toString().padStart(2, "0");
+    const m = ((i % 4) * 15).toString().padStart(2, "0");
+    labels.push(h + "h" + m);
+  }
+
   const now      = new Date();
   const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-  const binMs    = minutesBin * 60 * 1000;
-  const total    = Math.floor((now - midnight) / binMs) + 1;
-  const bins     = [];
 
-  for (let i = 0; i < total; i++) {
-    const start = new Date(midnight.getTime() + i * binMs);
-    const end   = new Date(start.getTime() + binMs);
-    const lbl   = start.getHours().toString().padStart(2,"0") + "h" +
-                  start.getMinutes().toString().padStart(2,"0");
-
-    const pts = data
+  /* Pour chaque bin, on calcule la moyenne des mesures qui tombent dedans */
+  const values = labels.map((_, i) => {
+    const start = new Date(midnight.getTime() + i * 15 * 60 * 1000);
+    const end   = new Date(start.getTime() + 15 * 60 * 1000);
+    const pts   = data
       .filter(d => { const t = new Date(d.timestamp); return t >= start && t < end; })
-      .map(d => parseFloat(d[key]))
+      .map(d => parseFloat(d.temperature))
       .filter(v => !isNaN(v));
+    return pts.length ? parseFloat((pts.reduce((a,b)=>a+b,0)/pts.length).toFixed(1)) : null;
+  });
 
-    const avg = pts.length ? pts.reduce((a,b)=>a+b,0)/pts.length : null;
-    bins.push({ label: lbl, value: avg !== null ? parseFloat(avg.toFixed(1)) : null });
-  }
-  return bins;
+  /* Titre avec la date du jour : "samedi 11 avril" */
+  const dateTitre = now.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  document.getElementById("chart24h-title").textContent =
+    "📈 Température — " + dateTitre + " (moyenne 15 min)";
+
+  if (chart24h) chart24h.destroy();
+  chart24h = new Chart(document.getElementById("chart24h"), {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: "Température (°C) — moy. 15 min",
+        data: values,
+        borderColor: "#38bdf8",
+        backgroundColor: "rgba(56,189,248,0.07)",
+        borderWidth: 2,
+        tension: 0.35,
+        pointRadius: 2,
+        pointBackgroundColor: "#38bdf8",
+        fill: true,
+        spanGaps: false  /* interrompt la ligne si pas de donnée */
+      }]
+    },
+    options: {
+      ...darkOpts,
+      plugins: {
+        ...darkOpts.plugins,
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.parsed.y !== null
+              ? ctx.parsed.y.toFixed(1) + " °C"
+              : "Pas de données"
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: "#64748b",
+            font: { family: "'Share Tech Mono'" },
+            /* N'afficher que les heures rondes (toutes les 4 tranches de 15 min = 1h) */
+            callback: (val, idx) => idx % 4 === 0
+              ? Math.floor(idx / 4).toString().padStart(2, "0") + "h"
+              : ""
+          },
+          grid: { color: "#1e3a5f" }
+        },
+        y: {
+          ticks: { color: "#64748b", font: { family: "'Share Tech Mono'" } },
+          grid: { color: "#1e3a5f" }
+        }
+      }
+    }
+  });
 }
 
-/** Min / moy / max par jour sur les 7 derniers jours */
+/* ============================================================
+   GRAPHIQUE 7 JOURS — min / moy / max par jour
+   ============================================================ */
 function binBy7Days(data) {
   const days = {};
   data.forEach(d => {
@@ -627,29 +905,22 @@ async function loadData() {
     const last = data[data.length - 1];
     const prev = data[data.length - 3];
 
-    /* -- Mesures (valeurs seules, sans unité dans le span) -- */
     document.getElementById("temp").textContent = parseFloat(last.temperature).toFixed(1);
     document.getElementById("hum").textContent  = parseFloat(last.humidity).toFixed(0);
     document.getElementById("pres").textContent = parseFloat(last.pressure).toFixed(1);
 
-    /* -- Date et heure précises de la dernière mesure -- */
     const dt = new Date(last.timestamp);
-    const dateStr = dt.toLocaleDateString("fr-FR", {
-      weekday: "long", day: "2-digit", month: "long", year: "numeric"
-    });
-    const timeStr = dt.toLocaleTimeString("fr-FR", {
-      hour: "2-digit", minute: "2-digit", second: "2-digit"
-    });
     document.getElementById("status").innerHTML =
-      `<span class="dot-live"></span>Dernière mesure : ${dateStr} à ${timeStr}`;
+      `<span class="dot-live"></span>Dernière mesure : ` +
+      dt.toLocaleDateString("fr-FR", { weekday:"long", day:"2-digit", month:"long", year:"numeric" }) +
+      ` à ` +
+      dt.toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit", second:"2-digit" });
 
-    /* -- Score surface -- */
     const dP = parseFloat(prev.pressure) - parseFloat(last.pressure);
     const surfaceScore = Math.min(100, Math.max(0, dP * 40 + parseFloat(last.humidity) * 0.3));
     document.getElementById("intensityBar").style.width = surfaceScore + "%";
-    document.getElementById("intensityPct").textContent  = Math.round(surfaceScore) + " %";
+    document.getElementById("intensityPct").textContent = Math.round(surfaceScore) + " %";
 
-    /* -- Icône provisoire (sera mise à jour par loadUpperAtmosphere) -- */
     let icon = "☀️", alertText = "Beau temps stable";
     if      (surfaceScore > 80) { icon = "🌩️"; alertText = "Orage intense possible"; }
     else if (surfaceScore > 60) { icon = "⛈️"; alertText = "Orage probable"; }
@@ -658,110 +929,42 @@ async function loadData() {
     document.getElementById("icon").textContent  = icon;
     document.getElementById("alert").textContent = alertText;
 
-    /* -- Partage pour loadUpperAtmosphere -- */
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
     surfaceData = {
       last, prev, surfaceScore, allData: data,
       stormData: data.filter(d => new Date(d.timestamp) >= oneHourAgo)
     };
 
-    /* ========================================================
-       GRAPHIQUE JOUR : 00h → maintenant, moyenne 15 min
-       ======================================================== */
+    /* Graphique jour — 96 bins fixes */
     const todayMidnight = new Date();
-    todayMidnight.setHours(0,0,0,0);
-    const todayData  = data.filter(d => new Date(d.timestamp) >= todayMidnight);
-    const binnedDay  = binByMinutes(todayData, 15, "temperature");
+    todayMidnight.setHours(0, 0, 0, 0);
+    const todayData = data.filter(d => new Date(d.timestamp) >= todayMidnight);
+    buildChart24h(todayData);
 
-    if (chart24h) chart24h.destroy();
-    chart24h = new Chart(document.getElementById("chart24h"), {
-      type: "line",
-      data: {
-        labels: binnedDay.map(b => b.label),
-        datasets: [{
-          label: "Température (°C) — moy. 15 min",
-          data:  binnedDay.map(b => b.value),
-          borderColor: "#38bdf8",
-          backgroundColor: "rgba(56,189,248,0.07)",
-          borderWidth: 2,
-          tension: 0.35,
-          pointRadius: 3,
-          pointBackgroundColor: "#38bdf8",
-          fill: true,
-          spanGaps: false
-        }]
-      },
-      options: {
-        ...darkOpts,
-        plugins: {
-          ...darkOpts.plugins,
-          tooltip: {
-            callbacks: {
-              label: ctx => ctx.parsed.y !== null
-                ? ctx.parsed.y.toFixed(1) + " °C"
-                : "Pas de données"
-            }
-          }
-        }
-      }
-    });
-
-    /* ========================================================
-       GRAPHIQUE 7 JOURS : min / moy / max par jour
-       ======================================================== */
+    /* Graphique 7 jours */
     const { labels: l7, mins, avgs, maxs } = binBy7Days(data);
-
     if (chart7j) chart7j.destroy();
     chart7j = new Chart(document.getElementById("chart7j"), {
       type: "line",
       data: {
         labels: l7,
         datasets: [
-          {
-            label: "Minimum (°C)",
-            data: mins,
-            borderColor: "#38bdf8",
-            borderWidth: 2,
-            tension: 0.3,
-            pointRadius: 4,
-            fill: false
-          },
-          {
-            label: "Moyenne (°C)",
-            data: avgs,
-            borderColor: "#facc15",
-            borderWidth: 2.5,
-            tension: 0.3,
-            pointRadius: 5,
-            pointBackgroundColor: "#facc15",
-            fill: false
-          },
-          {
-            label: "Maximum (°C)",
-            data: maxs,
-            borderColor: "#f97316",
-            borderWidth: 2,
-            tension: 0.3,
-            pointRadius: 4,
-            fill: false
-          }
+          { label:"Minimum (°C)",  data:mins, borderColor:"#38bdf8", borderWidth:2, tension:0.3, pointRadius:4, fill:false },
+          { label:"Moyenne (°C)",  data:avgs, borderColor:"#facc15", borderWidth:2.5, tension:0.3, pointRadius:5, pointBackgroundColor:"#facc15", fill:false },
+          { label:"Maximum (°C)", data:maxs, borderColor:"#f97316", borderWidth:2, tension:0.3, pointRadius:4, fill:false }
         ]
       },
       options: darkOpts
     });
 
-    /* ========================================================
-       TABLEAU HISTORIQUE : 50 dernières mesures, date+heure précises
-       ======================================================== */
+    /* Tableau historique */
     const tbody = document.getElementById("tableBody");
     tbody.innerHTML = "";
     data.slice(-50).reverse().forEach(d => {
       const ddt = new Date(d.timestamp);
-      const dStr = ddt.toLocaleDateString("fr-FR", { weekday:"long", day:"2-digit", month:"2-digit", year:"numeric" });
-      const tStr = ddt.toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit", second:"2-digit" });
       tbody.innerHTML += `
         <tr>
-          <td>${dStr} à ${tStr}</td>
+          <td>${ddt.toLocaleDateString("fr-FR",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})} à ${ddt.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</td>
           <td>${parseFloat(d.temperature).toFixed(1)}</td>
           <td>${parseFloat(d.humidity).toFixed(0)}</td>
           <td>${parseFloat(d.pressure).toFixed(1)}</td>
@@ -795,13 +998,12 @@ async function loadUpperAtmosphere() {
     const li   = data.hourly.lifted_index?.[hour]       ?? 0;
     const kIdx = data.hourly.k_index?.[hour]            ?? 0;
 
-    const avg      = vectorAverage(s850, d850, s700, d700);
-    const shear    = Math.abs(s700 - s850);
-    const moveDeg  = movementDir(avg.dir);
+    const avg     = vectorAverage(s850, d850, s700, d700);
+    const shear   = Math.abs(s700 - s850);
+    const moveDeg = movementDir(avg.dir);
 
-    /* -- Vecteur -- */
     let eta = "--";
-    if (avg.speed > 3) { const m = Math.round((10/avg.speed)*60); eta = m+" min"; }
+    if (avg.speed > 3) { eta = Math.round((10/avg.speed)*60) + " min"; }
 
     document.getElementById("stormVector").textContent =
       "Vent cellule : " + avg.speed.toFixed(1) + " km/h (" + Math.round(avg.dir) + "°)";
@@ -817,43 +1019,30 @@ async function loadUpperAtmosphere() {
     document.getElementById("shearInfo").textContent =
       "Cisaillement : " + shear.toFixed(1) + " km/h (" + shearTxt + ")";
 
-    /* -- Profil atmosphérique -- */
     document.getElementById("atmo-cape").textContent   = Math.round(cape) + " J/kg";
     document.getElementById("atmo-cape-i").textContent =
-      cape > 2000 ? "Extrême ⚠️" : cape > 1000 ? "Fort" : cape > 500 ? "Modéré" : cape > 200 ? "Faible" : "Nul";
-
+      cape>2000?"Extrême ⚠️":cape>1000?"Fort":cape>500?"Modéré":cape>200?"Faible":"Nul";
     document.getElementById("atmo-li").textContent   = li.toFixed(1);
     document.getElementById("atmo-li-i").textContent =
-      li < -6 ? "Extrême ⚠️" : li < -4 ? "Très instable" : li < -2 ? "Instable" : li < 0 ? "Lég. instable" : "Stable";
-
+      li<-6?"Extrême ⚠️":li<-4?"Très instable":li<-2?"Instable":li<0?"Lég. instable":"Stable";
     document.getElementById("atmo-k").textContent   = Math.round(kIdx);
     document.getElementById("atmo-k-i").textContent =
-      kIdx > 35 ? "Orage probable ⚠️" : kIdx > 30 ? "Risque élevé" : kIdx > 25 ? "Risque modéré" : "Faible risque";
+      kIdx>35?"Orage probable ⚠️":kIdx>30?"Risque élevé":kIdx>25?"Risque modéré":"Faible risque";
 
-    /* -- Scores -- */
     let convScore = 0;
-    if      (cape > 2000) convScore += 40;
-    else if (cape > 1000) convScore += 30;
-    else if (cape > 500)  convScore += 20;
-    else if (cape > 200)  convScore += 10;
-    if      (li < -6)     convScore += 25;
-    else if (li < -4)     convScore += 20;
-    else if (li < -2)     convScore += 10;
-    if      (kIdx > 35)   convScore += 20;
-    else if (kIdx > 30)   convScore += 15;
-    else if (kIdx > 25)   convScore += 10;
+    if      (cape>2000) convScore+=40; else if (cape>1000) convScore+=30;
+    else if (cape>500)  convScore+=20; else if (cape>200)  convScore+=10;
+    if      (li<-6)     convScore+=25; else if (li<-4)     convScore+=20; else if (li<-2) convScore+=10;
+    if      (kIdx>35)   convScore+=20; else if (kIdx>30)   convScore+=15; else if (kIdx>25) convScore+=10;
     convScore = Math.min(100, convScore);
 
-    const shearScore = shear > 30 ? 100 : shear > 20 ? 70 : shear > 10 ? 40 : 10;
+    const shearScore    = shear>30?100:shear>20?70:shear>10?40:10;
     const { surfaceScore } = surfaceData;
-    const globalScoreV2 = Math.round(Math.min(100,
-      surfaceScore * 0.4 + convScore * 0.4 + shearScore * 0.2
-    ));
+    const globalScoreV2 = Math.round(Math.min(100, surfaceScore*0.4 + convScore*0.4 + shearScore*0.2));
 
     document.getElementById("globalBar").style.width = globalScoreV2 + "%";
-    document.getElementById("globalPct").textContent  = globalScoreV2 + " %";
+    document.getElementById("globalPct").textContent = globalScoreV2 + " %";
 
-    /* -- Tendance -- */
     const { last, prev } = surfaceData;
     let dP = 0;
     if (last && prev) {
@@ -866,91 +1055,218 @@ async function loadUpperAtmosphere() {
       document.getElementById("stormTrend").textContent = "Tendance : " + trend;
     }
 
-    /* -- Activité finale -- */
     const activity = computeStormActivity({
       globalScore: globalScoreV2,
-      humidity:    last ? parseFloat(last.humidity) : 0,
+      humidity: last ? parseFloat(last.humidity) : 0,
       dP, cape, shear
     });
-
     document.getElementById("icon").textContent      = activity.icon;
     document.getElementById("alert").textContent     = activity.text;
     document.getElementById("stormReal").textContent = "Activité niveau " + activity.level + "/5";
 
-    /* -- Points niveaux -- */
     for (let i = 1; i <= 5; i++) {
       const dot = document.getElementById("dot" + i);
       dot.className = "dot";
       if (i <= activity.level) dot.classList.add("on-" + i);
     }
 
-    /* ========================================================
-       GRAPHIQUE ORAGE : apparaît si globalScoreV2 > SEUIL_ORAGE
-       ======================================================== */
+    /* Graphique orage */
     const stormSection = document.getElementById("stormSection");
     const stormData    = surfaceData.stormData || [];
-
     if (globalScoreV2 > SEUIL_ORAGE && stormData.length >= 2) {
       stormSection.style.display = "block";
-
       const sLabels = stormData.map(d =>
         new Date(d.timestamp).toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit" })
       );
-
       if (chartStorm) chartStorm.destroy();
       chartStorm = new Chart(document.getElementById("stormCanvas"), {
         type: "line",
         data: {
           labels: sLabels,
           datasets: [
-            {
-              label: "Température (°C)",
-              data: stormData.map(d => parseFloat(d.temperature)),
-              borderColor: "#f97316",
-              backgroundColor: "rgba(249,115,22,0.06)",
-              borderWidth: 2, tension: 0.2, pointRadius: 2,
-              yAxisID: "yTemp", fill: true
-            },
-            {
-              label: "Humidité (%)",
-              data: stormData.map(d => parseFloat(d.humidity)),
-              borderColor: "#38bdf8",
-              backgroundColor: "rgba(56,189,248,0.06)",
-              borderWidth: 2, tension: 0.2, pointRadius: 2,
-              yAxisID: "yHum", fill: true
-            },
-            {
-              label: "Pression (hPa)",
-              data: stormData.map(d => parseFloat(d.pressure)),
-              borderColor: "#a78bfa",
-              borderWidth: 2, tension: 0.2, pointRadius: 2,
-              yAxisID: "yPres", fill: false
-            }
+            { label:"Température (°C)", data:stormData.map(d=>parseFloat(d.temperature)), borderColor:"#f97316", backgroundColor:"rgba(249,115,22,0.06)", borderWidth:2, tension:0.2, pointRadius:2, yAxisID:"yTemp", fill:true },
+            { label:"Humidité (%)",      data:stormData.map(d=>parseFloat(d.humidity)),    borderColor:"#38bdf8", backgroundColor:"rgba(56,189,248,0.06)",   borderWidth:2, tension:0.2, pointRadius:2, yAxisID:"yHum",  fill:true },
+            { label:"Pression (hPa)",   data:stormData.map(d=>parseFloat(d.pressure)),    borderColor:"#a78bfa",                                              borderWidth:2, tension:0.2, pointRadius:2, yAxisID:"yPres", fill:false }
           ]
         },
         options: {
-          responsive: true,
-          interaction: { mode: "index", intersect: false },
-          plugins: { legend: { labels: { color: "#94a3b8", font: { family: "'Share Tech Mono'" } } } },
-          scales: {
-            x:     { ticks: { color:"#64748b", maxTicksLimit:15, font:{family:"'Share Tech Mono'"} }, grid:{color:"#1e3a5f"} },
-            yTemp: { position:"left",   ticks:{color:"#f97316"}, grid:{color:"#1e3a5f"}, title:{display:true,text:"Temp °C",color:"#f97316"} },
-            yHum:  { position:"right",  ticks:{color:"#38bdf8"}, grid:{drawOnChartArea:false}, title:{display:true,text:"Humid. %",color:"#38bdf8"} },
-            yPres: { position:"right",  ticks:{color:"#a78bfa"}, grid:{drawOnChartArea:false}, title:{display:true,text:"Pression hPa",color:"#a78bfa"} }
+          responsive:true, interaction:{mode:"index",intersect:false},
+          plugins:{legend:{labels:{color:"#94a3b8",font:{family:"'Share Tech Mono'"}}}},
+          scales:{
+            x:     {ticks:{color:"#64748b",maxTicksLimit:15,font:{family:"'Share Tech Mono'"}},grid:{color:"#1e3a5f"}},
+            yTemp: {position:"left",  ticks:{color:"#f97316"},grid:{color:"#1e3a5f"},title:{display:true,text:"Temp °C",color:"#f97316"}},
+            yHum:  {position:"right", ticks:{color:"#38bdf8"},grid:{drawOnChartArea:false},title:{display:true,text:"Humid. %",color:"#38bdf8"}},
+            yPres: {position:"right", ticks:{color:"#a78bfa"},grid:{drawOnChartArea:false},title:{display:true,text:"Pression hPa",color:"#a78bfa"}}
           }
         }
       });
-
     } else {
       stormSection.style.display = "none";
     }
 
-    /* Console debug */
-    console.log("=== SCORE V2 ===", globalScoreV2, "| Surface:", surfaceScore, "| Conv:", convScore, "| Org:", shearScore);
-    console.log("CAPE:", cape, "LI:", li, "K:", kIdx);
+    console.log("SCORE V2:", globalScoreV2, "| Surface:", surfaceScore, "| Conv:", convScore, "| Org:", shearScore);
 
   } catch (err) {
     console.error("Erreur loadUpperAtmosphere :", err);
+  }
+}
+
+/* ============================================================
+   ÉCLAIRS BLITZORTUNG (via proxy Apps Script)
+   ============================================================ */
+async function loadLightning() {
+  if (!BLITZORTUNG_PROXY_URL) {
+    document.getElementById("lgt-status").textContent =
+      "⚠️ Proxy non configuré — voir instructions ci-dessous";
+    document.getElementById("lgt-trend").textContent =
+      "Tendance : en attente de configuration";
+    return;
+  }
+
+  try {
+    const res    = await fetch(BLITZORTUNG_PROXY_URL);
+    const strikes = await res.json(); // tableau [ {lat, lon, time}, ... ]
+
+    const now     = Date.now();
+    const nowSec  = Math.floor(now / 1000);
+
+    /* Filtrer par rayon et enrichir avec distance + timestamp JS */
+    const nearby = strikes
+      .map(s => ({
+        dist: haversine(LAT, LON, s.lat, s.lon),
+        ts:   s.time * 1000  /* Blitzortung donne des secondes Unix */
+      }))
+      .filter(s => s.dist <= RAYON_KM)
+      .sort((a, b) => a.dist - b.dist);
+
+    /* Ajouter au buffer historique (garde 60 min) */
+    nearby.forEach(s => {
+      if (!lightningHistory.find(h => Math.abs(h.ts - s.ts) < 1000 && Math.abs(h.dist - s.dist) < 0.1)) {
+        lightningHistory.push(s);
+      }
+    });
+    /* Purger ce qui est > 60 min */
+    lightningHistory = lightningHistory.filter(s => now - s.ts < 60 * 60 * 1000);
+
+    /* Comptages */
+    const count10 = lightningHistory.filter(s => now - s.ts < 10 * 60 * 1000).length;
+    const count30 = lightningHistory.filter(s => now - s.ts < 30 * 60 * 1000).length;
+    const count60 = lightningHistory.length;
+
+    /* Plus proche */
+    const closest = nearby.length ? nearby[0] : null;
+
+    document.getElementById("lgt-count10").textContent = count10;
+    document.getElementById("lgt-count30").textContent = count30;
+    document.getElementById("lgt-count60").textContent = count60;
+
+    if (closest) {
+      document.getElementById("lgt-closest").textContent =
+        closest.dist.toFixed(1) + " km";
+      const minsAgo = Math.round((now - closest.ts) / 60000);
+      document.getElementById("lgt-closest-time").textContent =
+        "il y a " + minsAgo + " min";
+    } else {
+      document.getElementById("lgt-closest").textContent = "Aucun";
+      document.getElementById("lgt-closest-time").textContent = "dans 100 km";
+    }
+
+    /* Tendance : compare les 10 dernières min avec les 10 min d'avant */
+    const prev10 = lightningHistory.filter(s => now - s.ts >= 10*60*1000 && now - s.ts < 20*60*1000);
+    let trendText = "Stable — aucune activité détectée";
+    let trendIcon = "➡️";
+
+    if (count10 > 0 || prev10.length > 0) {
+      if (count10 > prev10.length * 1.5 && count10 >= 3) {
+        trendText = "⬆️ Activité en hausse — cellule qui approche possible";
+        trendIcon = "⬆️";
+      } else if (count10 < prev10.length * 0.5 && prev10.length >= 3) {
+        trendText = "⬇️ Activité en baisse — cellule qui s'éloigne";
+        trendIcon = "⬇️";
+      } else if (count10 > 0) {
+        trendText = "➡️ Activité stable (" + count10 + " éclairs / 10 min)";
+      }
+    }
+
+    /* Distance moyenne des 5 dernières minutes vs 5 min d'avant → se rapproche ? */
+    const last5  = lightningHistory.filter(s => now - s.ts < 5 * 60 * 1000);
+    const prev5  = lightningHistory.filter(s => now - s.ts >= 5*60*1000 && now - s.ts < 10*60*1000);
+    if (last5.length >= 2 && prev5.length >= 2) {
+      const avgDistLast = last5.reduce((a,b) => a + b.dist, 0) / last5.length;
+      const avgDistPrev = prev5.reduce((a,b) => a + b.dist, 0) / prev5.length;
+      const delta = avgDistPrev - avgDistLast; /* positif = se rapproche */
+      if (delta > 5)       trendText += "\n📍 Se rapproche (~" + delta.toFixed(0) + " km/5 min)";
+      else if (delta < -5) trendText += "\n📍 S'éloigne (~" + Math.abs(delta).toFixed(0) + " km/5 min)";
+      else                 trendText += "\n📍 Distance stable";
+    }
+
+    document.getElementById("lgt-trend").textContent = trendText;
+    document.getElementById("lgt-status").textContent =
+      "Source : Blitzortung.org — " + nearby.length + " impacts reçus — " +
+      new Date().toLocaleTimeString("fr-FR");
+
+  } catch (err) {
+    console.error("Erreur lightning :", err);
+    document.getElementById("lgt-status").textContent = "Erreur chargement éclairs : " + err.message;
+  }
+}
+
+/* ============================================================
+   NOWCAST RAINVIEWER (étape 1 — aucun proxy nécessaire)
+   ============================================================ */
+async function loadNowcast() {
+  try {
+    const res  = await fetch("https://api.rainviewer.com/public/weather-maps.json");
+    const data = await res.json();
+
+    /* Frames radar passées disponibles */
+    const past    = data.radar?.past    || [];
+    const nowcast = data.radar?.nowcast || [];
+
+    /* On prend la dernière frame passée = "maintenant" */
+    const latestPast = past[past.length - 1];
+
+    /* On construit les 3 frames nowcast +10/+20/+30 min */
+    /* RainViewer fournit en général 3 frames nowcast de 10 min chacune */
+    const frames = [
+      { label: "nf-now",  data: latestPast,    plusMin: 0  },
+      { label: "nf-10",   data: nowcast[0],    plusMin: 10 },
+      { label: "nf-20",   data: nowcast[1],    plusMin: 20 },
+      { label: "nf-30",   data: nowcast[2],    plusMin: 30 },
+    ];
+
+    frames.forEach(f => {
+      const valEl = document.getElementById(f.label);
+      const subEl = document.getElementById(f.label + "-sub");
+      if (!valEl) return;
+
+      if (!f.data) {
+        valEl.textContent = "--";
+        if (subEl) subEl.textContent = "Indisponible";
+        return;
+      }
+
+      /* L'heure de la frame */
+      const frameTime = new Date(f.data.time * 1000);
+      valEl.textContent = frameTime.toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit" });
+      if (subEl) subEl.textContent = f.plusMin === 0 ? "Dernière image" : "Prévision extrapolée";
+    });
+
+    /* Statut global */
+    const lastTime = latestPast
+      ? new Date(latestPast.time * 1000).toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit" })
+      : "--";
+
+    const nowcastCount = nowcast.length;
+
+    document.getElementById("nowcast-status").textContent =
+      "Dernière image radar : " + lastTime +
+      " — " + nowcastCount + " frame(s) nowcast disponibles (+10/+20/+30 min)" +
+      " — Source : RainViewer API";
+
+  } catch (err) {
+    console.error("Erreur nowcast :", err);
+    document.getElementById("nowcast-status").textContent = "Erreur chargement nowcast RainViewer.";
   }
 }
 
@@ -960,18 +1276,26 @@ async function loadUpperAtmosphere() {
 async function init() {
   await loadData();
   await loadUpperAtmosphere();
+  await loadNowcast();
+  await loadLightning();
 }
 
 init();
 
-/* Rafraîchissement complet toutes les 60 s */
+/* Données surface + analyse toutes les 60 s */
 setInterval(async () => {
   await loadData();
   await loadUpperAtmosphere();
 }, 60000);
 
-/* Open-Meteo en plus toutes les 5 min */
+/* Open-Meteo toutes les 5 min */
 setInterval(loadUpperAtmosphere, 300000);
+
+/* Éclairs toutes les 60 s */
+setInterval(loadLightning, 60000);
+
+/* Nowcast toutes les 5 min (RainViewer met à jour toutes les ~5 min) */
+setInterval(loadNowcast, 300000);
 
 </script>
 </body>
