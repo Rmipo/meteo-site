@@ -382,7 +382,7 @@ tbody tr:last-child td { border-bottom:none; }
    CONFIG
    ============================================================ */
 const SHEETS_URL         = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
-const BLITZORTUNG_PROXY_URL = ""; /* ← coller URL Apps Script proxy ici quand prêt */
+const BLITZORTUNG_PROXY_URL = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec"; /* ← coller URL Apps Script proxy ici quand prêt */
 const LAT        = 46.42964;
 const LON        = 1.83906;
 const RAYON_KM   = 100;
@@ -670,31 +670,19 @@ function drawTrajectory(moveDeg, speedKmh, topoCorrection) {
     }).addTo(coneLayerGroup);
   });
 
-  /* Labels +60 et +90 min sur l'axe central */
+  /* Labels +60 et +90 min sur l'axe central — simples et lisibles */
   [
-    { pt: center60, label: '+60 min', dist: d60.toFixed(0) + ' km' },
-    { pt: center90, label: '+90 min', dist: d90.toFixed(0) + ' km' }
-  ].forEach(({ pt, label, dist }) => {
+    { pt: center60, label: '+60 min' },
+    { pt: center90, label: '+90 min' }
+  ].forEach(({ pt, label }) => {
     L.marker(pt, {
       icon: L.divIcon({
-        html: `<div style="font-family:'Share Tech Mono',monospace; font-size:10px; color:#f97316; background:rgba(2,6,23,0.85); padding:2px 6px; border-radius:4px; border:1px solid rgba(249,115,22,0.5); white-space:nowrap;">${label} · ${dist}</div>`,
+        html: `<div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:#f97316;background:rgba(2,6,23,0.85);padding:2px 6px;border-radius:4px;border:1px solid rgba(249,115,22,0.5);white-space:nowrap;">${label}</div>`,
         className: '',
-        iconAnchor: [30, 6]
+        iconAnchor: [22, 6]
       })
     }).addTo(coneLayerGroup);
   });
-
-  /* Info correction topo en popup sur la station */
-  if (topoCorrection && Math.abs(topoCorrection) > 1) {
-    const sign = topoCorrection > 0 ? '+' : '';
-    L.marker([LAT, LON], {
-      icon: L.divIcon({
-        html: `<div style="font-family:'Share Tech Mono',monospace; font-size:9px; color:#a78bfa; background:rgba(2,6,23,0.85); padding:2px 5px; border-radius:4px; border:1px solid rgba(167,139,250,0.4); white-space:nowrap; margin-top:20px;">Topo ${sign}${topoCorrection.toFixed(1)}°</div>`,
-        className: '',
-        iconAnchor: [-5, -5]
-      })
-    }).addTo(coneLayerGroup);
-  }
 }
 
 /* Place les impacts d'éclairs sur la carte */
@@ -915,33 +903,42 @@ function toggleLayer(name) {
 }
 
 /* ============================================================
-   PARSING TIMESTAMP — utilisé partout pour être cohérent
-   Google Sheets sérialise souvent la date comme objet JS
-   "Date(2025,3,12,14,30,0)" ou string "2025/04/12 14:30:00".
-   Apps Script JSON.stringify() d'un objet Date donne une string
-   ISO avec offset : "2025-04-12T12:30:00.000Z" (UTC) ou
-   "2025-04-12T14:30:00.000+02:00" (local).
-   On normalise tout pour obtenir un timestamp ms correct.
+   PARSING TIMESTAMP — robuste pour tous formats Google Sheets
+   Le problème observé : Google Apps Script sérialise new Date()
+   en UTC ISO "2026-04-12T16:13:37.000Z" mais l'heure réelle est
+   18h13 (UTC+2 en avril). On doit convertir en ms local correct.
    ============================================================ */
 function parseTS(raw) {
   if (!raw) return NaN;
-  /* Déjà un nombre (ms epoch) */
   if (typeof raw === 'number') return raw;
   let s = String(raw).trim();
-  /* Format Google Apps Script : "Date(2025,3,12,14,30,0)" */
+
+  /* Format Apps Script objet : "Date(2026,3,12,18,13,37)" — déjà local */
   const gMatch = s.match(/^Date\((\d+),(\d+),(\d+),(\d+),(\d+),(\d+)\)$/);
   if (gMatch) {
     const [,y,mo,d,h,mi,sec] = gMatch.map(Number);
     return new Date(y, mo, d, h, mi, sec).getTime();
   }
-  /* Format "2025/04/12 14:30:00" → normaliser séparateurs */
-  s = s.replace(/\//g, '-');
-  /* Format "2025-04-12 14:30:00" → ajouter T */
-  s = s.replace(' ', 'T');
-  /* Si ISO sans timezone → le navigateur l'interprète en LOCAL (spec ES2015+)
-     SAUF si c'est "2025-04-12" seul (date sans heure) qui est UTC par spec.
-     Avec heure incluse c'est local → parfait pour nous. */
-  return new Date(s).getTime();
+
+  /* Normaliser les séparateurs */
+  s = s.replace(/\//g, '-').replace(' ', 'T');
+
+  const ms = new Date(s).getTime();
+  if (isNaN(ms)) return NaN;
+
+  /*
+   * Clé du bug : si le timestamp se termine par 'Z' ou '+00:00'
+   * c'est de l'UTC pur → on le convertit en heure locale en ajoutant
+   * l'offset du navigateur (ex: UTC+2 = +120 min en avril en France).
+   * Sans suffixe timezone, le navigateur interprète déjà en local → OK.
+   */
+  const isUTC = s.endsWith('Z') || s.endsWith('+00:00') || s.endsWith('+0000');
+  if (isUTC) {
+    /* Ajouter l'offset local (en ms) pour ramener en heure locale */
+    const offsetMs = new Date().getTimezoneOffset() * -60 * 1000; /* négatif en France */
+    return ms + offsetMs;
+  }
+  return ms;
 }
 
 /* ============================================================
@@ -1283,16 +1280,29 @@ async function loadUpperAtmosphere() {
 
     const correctedMoveDeg = (moveDeg + (topoCorrection || 0) + 360) % 360;
 
+    /* ETA uniquement si score >= 40 (atmosphère instable minimum) */
     let eta = "--";
-    if (avgSpeed > 3) { eta = Math.round((10/avgSpeed)*60) + " min"; }
+    if (avgSpeed > 3 && globalScoreV2 >= 40) {
+      eta = Math.round((10/avgSpeed)*60) + " min";
+    }
 
     document.getElementById("stormVector").textContent =
-      "Vent cellule : " + avgSpeed.toFixed(1) + " km/h (" + Math.round(avgDir) + "°)" +
-      (topoCorrection ? " → corrigé " + correctedMoveDeg.toFixed(0) + "° (topo)" : "");
+      "Vent cellule : " + avgSpeed.toFixed(1) + " km/h (" + Math.round(avgDir) + "°)";
     document.getElementById("stormArrow").textContent     = arrowFromDeg(correctedMoveDeg);
-    document.getElementById("stormETA").textContent       = "Arrivée estimée (10 km) : " + eta;
+    document.getElementById("stormETA").textContent       = globalScoreV2 >= 40
+      ? "Arrivée estimée (10 km) : " + eta
+      : "Arrivée estimée (10 km) : -- (pas d'activité)";
     document.getElementById("stormDirection").textContent =
       "Direction déplacement : " + arrowFromDeg(correctedMoveDeg) + " (" + correctedMoveDeg.toFixed(0) + "°)";
+
+    /* Vecteurs vent altitude sur la carte : seulement si score >= 40 */
+    if (layerState.cone) {
+      if (globalScoreV2 >= 40) {
+        drawTrajectory(moveDeg, avgSpeed, topoCorrection);
+      } else {
+        coneLayerGroup.clearLayers(); /* Pas d'activité → on efface */
+      }
+    }
 
     let shearTxt = "Faible";
     if      (shear > 30) shearTxt = "Très fort ⚠️";
@@ -1343,9 +1353,6 @@ async function loadUpperAtmosphere() {
       dot.className = "dot";
       if (i <= activity.level) dot.classList.add("on-"+i);
     }
-
-    /* Mise à jour trajectoire sur la carte avec correction topo */
-    if (layerState.cone) drawTrajectory(moveDeg, avgSpeed, topoCorrection);
 
     /* Graphique orage */
     const stormSection = document.getElementById("stormSection");
