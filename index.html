@@ -334,7 +334,8 @@ tbody tr:last-child td { border-bottom:none; }
     <div class="map-controls">
       <button class="map-btn active" id="btn-radar"    onclick="toggleLayer('radar')">🌧 Radar</button>
       <button class="map-btn active" id="btn-strikes"  onclick="toggleLayer('strikes')">⚡ Éclairs</button>
-      <button class="map-btn active" id="btn-cone"     onclick="toggleLayer('cone')">🎯 Trajectoire</button>
+      <button class="map-btn active" id="btn-foci"     onclick="toggleLayer('foci')">🌀 Foyers</button>
+      <button class="map-btn active" id="btn-cone"     onclick="toggleLayer('cone')">➡ Vent altitude</button>
       <button class="map-btn active" id="btn-topo"     onclick="toggleLayer('topo')">🏔 Relief</button>
     </div>
   </div>
@@ -344,7 +345,8 @@ tbody tr:last-child td { border-bottom:none; }
     <div class="legend-item"><div class="legend-dot" style="background:#f97316"></div>Éclair 5–20 min</div>
     <div class="legend-item"><div class="legend-dot" style="background:#eab308"></div>Éclair 20–60 min</div>
     <div class="legend-item"><div class="legend-dot" style="background:#38bdf8"></div>Ma station</div>
-    <div class="legend-item"><div class="legend-dot" style="background:rgba(249,115,22,0.5); border:1px solid #f97316"></div>Vecteurs trajectoire (±25 km)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:rgba(239,68,68,0.3);border:2px dashed #ef4444"></div>Foyer orageux + trajectoire</div>
+    <div class="legend-item"><div class="legend-dot" style="background:rgba(249,115,22,0.3);border:1px solid #f97316"></div>Vent altitude</div>
     <div style="margin-left:auto; font-size:0.85em;" id="map-status">Chargement...</div>
   </div>
 </div>
@@ -475,7 +477,7 @@ let cellVector = { speed: 0, moveDeg: 0 };
    CARTE LEAFLET
    ============================================================ */
 let map, radarLayer, topoLayer, strikeLayerGroup, coneLayerGroup, stationMarker;
-let layerState = { radar: true, strikes: true, cone: true, topo: true };
+let layerState = { radar: true, strikes: true, cone: true, topo: true, foci: true };
 
 function initMap() {
   /* Carte de base OpenStreetMap */
@@ -509,6 +511,7 @@ function initMap() {
   /* Groupes de layers dynamiques */
   strikeLayerGroup = L.layerGroup().addTo(map);
   coneLayerGroup   = L.layerGroup().addTo(map);
+  fociLayerGroup   = L.layerGroup().addTo(map);
 
   /* Cercle rayon 100 km */
   L.circle([LAT, LON], {
@@ -561,14 +564,11 @@ async function updateRadarLayer() {
     const latest = past[past.length - 1];
 
     /*
-     * URL correcte RainViewer tiles :
-     * - scheme : https://tilecache.rainviewer.com{path}/{size}/{z}/{x}/{y}/{color}/{options}.png
-     * - size   : 512 (meilleure résolution, supporte zoom 1-12)
-     * - color  : 2 (palette météo classique)
-     * - options: 1_1 (smooth + snow)
-     * Le zoom 9 est bien dans la plage supportée (1-12)
+     * Tiles RainViewer 256px — compatibles zoom 1-12 sans configuration spéciale.
+     * On n'utilise PAS tileSize:512 + zoomOffset:1 qui cause des problèmes
+     * sur certaines versions de Leaflet. 256px standard fonctionne partout.
      */
-    const tileUrl = `https://tilecache.rainviewer.com${latest.path}/512/{z}/{x}/{y}/2/1_1.png`;
+    const tileUrl = `https://tilecache.rainviewer.com${latest.path}/256/{z}/{x}/{y}/2/1_1.png`;
 
     if (radarLayer) map.removeLayer(radarLayer);
 
@@ -576,9 +576,7 @@ async function updateRadarLayer() {
       opacity: 0.6,
       attribution: '© RainViewer',
       minZoom: 1,
-      maxZoom: 12,
-      tileSize: 256,   /* Leaflet affiche les tiles 512 en tileSize 256 → ×2 résolution */
-      zoomOffset: 1
+      maxZoom: 12
     });
 
     if (layerState.radar) radarLayer.addTo(map);
@@ -724,110 +722,331 @@ function updateStrikesOnMap(strikes) {
   });
 }
 
-/* Toggle visibilité d'une couche */
-function toggleLayer(name) {
+/* ============================================================
+   FOYERS ORAGEUX — détection + trajectoire depuis le foyer
+   Un "foyer" = cluster d'éclairs dans les 100 km.
+   On calcule son centre de masse, sa direction de déplacement
+   (depuis l'historique des 30 dernières minutes) et on trace
+   sa trajectoire projetée vers la station si elle la menace.
+   ============================================================ */
+let fociLayerGroup; /* initialisé dans initMap */
+
+/*
+ * Regroupe les éclairs en clusters géographiques (rayon 30 km).
+ * Retourne un tableau de foyers : { lat, lon, count, strikes[] }
+ */
+function clusterStrikes(strikes) {
+  const clusters = [];
+  strikes.forEach(s => {
+    let assigned = false;
+    for (const c of clusters) {
+      if (haversine(c.lat, c.lon, s.lat, s.lon) < 30) {
+        /* Fusionner dans ce cluster — recalcul du centre de masse */
+        c.lat = (c.lat * c.count + s.lat) / (c.count + 1);
+        c.lon = (c.lon * c.count + s.lon) / (c.count + 1);
+        c.count++;
+        c.strikes.push(s);
+        assigned = true;
+        break;
+      }
+    }
+    if (!assigned) clusters.push({ lat: s.lat, lon: s.lon, count: 1, strikes: [s] });
+  });
+  return clusters.filter(c => c.count >= 3); /* au moins 3 éclairs = foyer réel */
+}
+
+/*
+ * Calcule la direction de déplacement d'un foyer à partir de son
+ * historique : on compare le centre de masse des éclairs récents (5 min)
+ * avec les éclairs plus anciens (5-20 min).
+ * Retourne { moveDeg, speedKmh } ou null si pas assez de données.
+ */
+function computeFocusMovement(strikes) {
+  const now    = Date.now();
+  const recent = strikes.filter(s => now - s.ts < 5 * 60 * 1000);
+  const older  = strikes.filter(s => now - s.ts >= 5 * 60 * 1000 && now - s.ts < 20 * 60 * 1000);
+
+  if (recent.length < 2 || older.length < 2) return null;
+
+  const avgLat = arr => arr.reduce((a, b) => a + b.lat, 0) / arr.length;
+  const avgLon = arr => arr.reduce((a, b) => a + b.lon, 0) / arr.length;
+
+  const latRecent = avgLat(recent); const lonRecent = avgLon(recent);
+  const latOlder  = avgLat(older);  const lonOlder  = avgLon(older);
+
+  const distKm  = haversine(latOlder, lonOlder, latRecent, lonRecent);
+  const dtMin   = 10; /* on suppose ~10 min entre les deux groupes */
+  const speedKmh = (distKm / dtMin) * 60;
+
+  /* Direction : de l'ancien vers le récent */
+  const dLat = latRecent - latOlder;
+  const dLon = lonRecent - lonOlder;
+  let bearingRad = Math.atan2(dLon * Math.cos(degToRad(latOlder)), dLat);
+  let moveDeg    = ((radToDeg(bearingRad) + 360) % 360);
+
+  return { moveDeg, speedKmh };
+}
+
+/*
+ * Dessine les foyers détectés sur la carte.
+ * Pour chaque foyer :
+ *   - Cercle orange sur sa position
+ *   - Si mouvement détecté : 2 vecteurs parallèles + ligne vers ma station avec ETA
+ *   - Sinon : flèche du vent cellule (fallback)
+ */
+function detectAndDrawFoci() {
+  if (!fociLayerGroup) return;
+  fociLayerGroup.clearLayers();
+
+  /* Utiliser l'historique éclairs en mémoire */
+  const allStrikes = lightningHistory.filter(s => s.lat && s.lon); /* avec coordonnées */
+  if (!allStrikes.length) return;
+
+  const clusters = clusterStrikes(allStrikes);
+  if (!clusters.length) return;
+
+  clusters.forEach(cluster => {
+    const { lat, lon, count, strikes } = cluster;
+    const distToStation = haversine(LAT, LON, lat, lon);
+
+    /* Cercle représentant le foyer — taille proportionnelle au nombre d'éclairs */
+    const radius = Math.min(20000 + count * 1000, 50000); /* 20-50 km en mètres */
+    L.circle([lat, lon], {
+      radius,
+      color: '#ef4444',
+      fillColor: '#ef4444',
+      fillOpacity: 0.08,
+      weight: 2,
+      dashArray: '6 4'
+    }).addTo(fociLayerGroup)
+      .bindPopup(`<span style="font-family:monospace;font-size:12px;color:#ef4444">⚡ Foyer — ${count} éclairs<br>${distToStation.toFixed(0)} km de ta station</span>`);
+
+    /* Label nb éclairs */
+    L.marker([lat, lon], {
+      icon: L.divIcon({
+        html: `<div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:#ef4444;background:rgba(2,6,23,0.85);padding:3px 7px;border-radius:5px;border:1px solid rgba(239,68,68,0.5);white-space:nowrap;">⚡ ${count}</div>`,
+        className: '',
+        iconAnchor: [20, -8]
+      })
+    }).addTo(fociLayerGroup);
+
+    /* Tentative de calcul du mouvement propre du foyer */
+    const movement = computeFocusMovement(strikes);
+    const moveDeg  = movement ? movement.moveDeg : (cellVector.moveDeg || 0);
+    const speedKmh = movement ? movement.speedKmh : (cellVector.speed || 20);
+
+    if (speedKmh < 2) return; /* foyer quasi stationnaire */
+
+    const d60 = speedKmh * 1.0;
+    const d90 = speedKmh * 1.5;
+
+    /* Deux vecteurs parallèles espacés de ±20 km */
+    const halfW    = 20;
+    const perpLeft  = (moveDeg - 90 + 360) % 360;
+    const perpRight = (moveDeg + 90) % 360;
+
+    const oL = destinationPoint(lat, lon, halfW, perpLeft);
+    const oR = destinationPoint(lat, lon, halfW, perpRight);
+    const eL = destinationPoint(oL[0], oL[1], d90, moveDeg);
+    const eR = destinationPoint(oR[0], oR[1], d90, moveDeg);
+    const eL60 = destinationPoint(oL[0], oL[1], d60, moveDeg);
+    const eR60 = destinationPoint(oR[0], oR[1], d60, moveDeg);
+
+    /* Zone ombragée */
+    L.polygon([oL, eL, eR, oR], {
+      color: 'transparent', fillColor: '#ef4444', fillOpacity: 0.07, weight: 0
+    }).addTo(fociLayerGroup);
+
+    /* Vecteurs */
+    [[oL, eL, eL60], [oR, eR, eR60]].forEach(([orig, end90, end60]) => {
+      L.polyline([orig, end90], { color: '#ef4444', weight: 2.5, opacity: 0.85 }).addTo(fociLayerGroup);
+      /* Flèche */
+      L.marker(end90, {
+        icon: L.divIcon({
+          html: `<div style="font-size:14px;transform:rotate(${moveDeg}deg);color:#ef4444;line-height:1;">▲</div>`,
+          className: '', iconSize: [14,14], iconAnchor: [7,7]
+        })
+      }).addTo(fociLayerGroup);
+      /* Point +60 min */
+      L.circleMarker(end60, { radius:3, color:'#ef4444', fillColor:'#ef4444', fillOpacity:1, weight:0 }).addTo(fociLayerGroup);
+    });
+
+    /* Ligne vers ma station avec ETA si le foyer se dirige vers moi */
+    const bearingToStation = (() => {
+      const dLat = LAT - lat;
+      const dLon = (LON - lon) * Math.cos(degToRad(lat));
+      return ((radToDeg(Math.atan2(dLon, dLat)) + 360) % 360);
+    })();
+
+    const angleDiff = Math.abs(((moveDeg - bearingToStation + 540) % 360) - 180);
+
+    if (angleDiff < 60) { /* Le foyer se dirige vers la station (±60°) */
+      const etaMin = Math.round((distToStation / speedKmh) * 60);
+
+      L.polyline([[lat, lon], [LAT, LON]], {
+        color: '#ef4444', weight: 1.5, opacity: 0.6, dashArray: '8 6'
+      }).addTo(fociLayerGroup);
+
+      /* ETA au milieu de la ligne */
+      const midLat = (lat + LAT) / 2;
+      const midLon = (lon + LON) / 2;
+      L.marker([midLat, midLon], {
+        icon: L.divIcon({
+          html: `<div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:#ef4444;background:rgba(2,6,23,0.9);padding:3px 7px;border-radius:5px;border:1px solid #ef4444;white-space:nowrap;">⏱ ETA ~${etaMin} min</div>`,
+          className: '',
+          iconAnchor: [40, 8]
+        })
+      }).addTo(fociLayerGroup);
+    }
+  });
+}
   layerState[name] = !layerState[name];
   const btn = document.getElementById('btn-' + name);
   btn.classList.toggle('active', layerState[name]);
 
-  if (name === 'radar')   { layerState.radar   ? radarLayer?.addTo(map)   : radarLayer?.remove(); }
+  if (name === 'radar')   { layerState.radar   ? radarLayer?.addTo(map)       : radarLayer?.remove(); }
   if (name === 'strikes') { layerState.strikes  ? strikeLayerGroup.addTo(map) : strikeLayerGroup.remove(); }
   if (name === 'cone')    { layerState.cone     ? coneLayerGroup.addTo(map)   : coneLayerGroup.remove(); }
-  if (name === 'topo')    { layerState.topo     ? topoLayer.addTo(map)         : topoLayer.remove(); }
+  if (name === 'topo')    { layerState.topo     ? topoLayer.addTo(map)        : topoLayer.remove(); }
+  if (name === 'foci')    { layerState.foci     ? fociLayerGroup.addTo(map)   : fociLayerGroup.remove(); }
+}
+
+/* ============================================================
+   PARSING TIMESTAMP — utilisé partout pour être cohérent
+   Google Sheets sérialise souvent la date comme objet JS
+   "Date(2025,3,12,14,30,0)" ou string "2025/04/12 14:30:00".
+   Apps Script JSON.stringify() d'un objet Date donne une string
+   ISO avec offset : "2025-04-12T12:30:00.000Z" (UTC) ou
+   "2025-04-12T14:30:00.000+02:00" (local).
+   On normalise tout pour obtenir un timestamp ms correct.
+   ============================================================ */
+function parseTS(raw) {
+  if (!raw) return NaN;
+  /* Déjà un nombre (ms epoch) */
+  if (typeof raw === 'number') return raw;
+  let s = String(raw).trim();
+  /* Format Google Apps Script : "Date(2025,3,12,14,30,0)" */
+  const gMatch = s.match(/^Date\((\d+),(\d+),(\d+),(\d+),(\d+),(\d+)\)$/);
+  if (gMatch) {
+    const [,y,mo,d,h,mi,sec] = gMatch.map(Number);
+    return new Date(y, mo, d, h, mi, sec).getTime();
+  }
+  /* Format "2025/04/12 14:30:00" → normaliser séparateurs */
+  s = s.replace(/\//g, '-');
+  /* Format "2025-04-12 14:30:00" → ajouter T */
+  s = s.replace(' ', 'T');
+  /* Si ISO sans timezone → le navigateur l'interprète en LOCAL (spec ES2015+)
+     SAUF si c'est "2025-04-12" seul (date sans heure) qui est UTC par spec.
+     Avec heure incluse c'est local → parfait pour nous. */
+  return new Date(s).getTime();
 }
 
 /* ============================================================
    GRAPHIQUE JOUR — 96 bins fixes 00h00 → 23h45
+   Toutes les heures affichées, graduations 15 min
    ============================================================ */
-function buildChart24h(data) {
+function buildChart24h(allData) {
+  const now     = new Date();
+  const nowMs   = now.getTime();
+
+  /*
+   * Minuit LOCAL du jour actuel en ms.
+   * On utilise setHours(0,0,0,0) sur une copie de now → garanti local.
+   */
+  const midnightLocal = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const midnightMs    = midnightLocal.getTime();
+
+  /* Labels fixes : 96 tranches de 15 min, 00h00 → 23h45 */
   const labels = [];
   for (let i = 0; i < 96; i++) {
-    const h = Math.floor(i / 4).toString().padStart(2, "0");
-    const m = ((i % 4) * 15).toString().padStart(2, "0");
-    labels.push(h + "h" + m);
+    const h = String(Math.floor(i / 4)).padStart(2, '0');
+    const m = String((i % 4) * 15).padStart(2, '0');
+    labels.push(`${h}h${m}`);
   }
 
-  const now      = new Date();
-  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-
-  /**
-   * Parsing robuste du timestamp Google Sheets.
-   * Google Sheets retourne souvent "2025/04/11 20:34:00" ou "2025-04-11T20:34:00"
-   * ou un objet Date sérialisé. On normalise tout ici.
-   * On traite TOUJOURS comme heure locale France (pas UTC).
+  /*
+   * Pour chaque tranche : moyenne des mesures dont le timestamp parsé
+   * tombe dans [midnightMs + i*15min , midnightMs + (i+1)*15min[
+   * On passe TOUT allData (pas pré-filtré) pour éviter que le filtre
+   * en amont coupe des données selon le même bug de timezone.
    */
-  function parseTS(raw) {
-    if (!raw) return null;
-    let s = String(raw).trim();
-    /* Format "Sat Apr 12 2025 20:34:00 GMT+0200" → déjà parsable */
-    /* Format "2025/04/11 20:34:00" → remplacer / par - */
-    s = s.replace(/\//g, '-');
-    /* Format "2025-04-11 20:34:00" → ajouter T pour ISO */
-    s = s.replace(' ', 'T');
-    /* Si pas de fuseau et format ISO local → interpréter comme heure locale */
-    /* On force en ajoutant l'offset France si absent */
-    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s) && !s.includes('Z') && !s.includes('+') && !s.includes('-', 10)) {
-      /* Pas de timezone → on suppose heure locale du navigateur (France) */
-      return new Date(s);
-    }
-    return new Date(s);
-  }
-
   const values = labels.map((_, i) => {
-    const start = new Date(midnight.getTime() + i * 15 * 60 * 1000);
-    const end   = new Date(start.getTime() + 15 * 60 * 1000);
-    const pts   = data
-      .filter(d => {
-        const t = parseTS(d.timestamp);
-        return t && !isNaN(t) && t >= start && t < end;
-      })
-      .map(d => parseFloat(d.temperature))
-      .filter(v => !isNaN(v));
-    return pts.length ? parseFloat((pts.reduce((a,b)=>a+b,0)/pts.length).toFixed(1)) : null;
+    const tStart = midnightMs + i * 15 * 60 * 1000;
+    const tEnd   = tStart + 15 * 60 * 1000;
+    const pts = allData
+      .map(d => ({ t: parseTS(d.timestamp), v: parseFloat(d.temperature) }))
+      .filter(({ t, v }) => !isNaN(t) && !isNaN(v) && t >= tStart && t < tEnd)
+      .map(({ v }) => v);
+    return pts.length ? parseFloat((pts.reduce((a, b) => a + b, 0) / pts.length).toFixed(1)) : null;
   });
 
-  /* Debug : affiche dans la console le nb de points parsés et leur plage horaire */
-  const allParsed = data.map(d => parseTS(d.timestamp)).filter(t => t && !isNaN(t));
-  if (allParsed.length) {
-    const minT = new Date(Math.min(...allParsed));
-    const maxT = new Date(Math.max(...allParsed));
-    console.log(`[Chart24h] ${allParsed.length} pts · de ${minT.toLocaleTimeString('fr-FR')} à ${maxT.toLocaleTimeString('fr-FR')} · minuit local = ${midnight.toLocaleString('fr-FR')}`);
-    console.log('[Chart24h] Exemple timestamp brut:', data[0].timestamp, '→ parsé:', parseTS(data[0].timestamp));
+  /* Debug console */
+  const parsed = allData.map(d => parseTS(d.timestamp)).filter(t => !isNaN(t));
+  if (parsed.length) {
+    const first = new Date(Math.min(...parsed)).toLocaleTimeString('fr-FR');
+    const last  = new Date(Math.max(...parsed)).toLocaleTimeString('fr-FR');
+    const inDay = parsed.filter(t => t >= midnightMs && t < midnightMs + 86400000).length;
+    console.log(`[Chart24h] total=${parsed.length} pts | aujourd'hui=${inDay} pts | plage=${first}→${last} | minuit=${midnightLocal.toLocaleString('fr-FR')}`);
+    if (allData[0]) console.log(`[Chart24h] ex. brut="${allData[0].timestamp}" → ${new Date(parseTS(allData[0].timestamp)).toLocaleString('fr-FR')}`);
   }
 
-  const dateTitre = now.toLocaleDateString("fr-FR", { weekday:"long", day:"numeric", month:"long" });
-  document.getElementById("chart24h-title").textContent = "📈 Température — " + dateTitre + " (moyenne 15 min)";
+  const dateTitre = now.toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' });
+  document.getElementById('chart24h-title').textContent = '📈 Température — ' + dateTitre + ' (moyenne 15 min)';
 
   if (chart24h) chart24h.destroy();
-  chart24h = new Chart(document.getElementById("chart24h"), {
-    type: "line",
+  chart24h = new Chart(document.getElementById('chart24h'), {
+    type: 'line',
     data: {
       labels,
       datasets: [{
-        label: "Température (°C) — moy. 15 min",
+        label: 'Température (°C) — moy. 15 min',
         data: values,
-        borderColor: "#38bdf8",
-        backgroundColor: "rgba(56,189,248,0.07)",
-        borderWidth: 2, tension: 0.35, pointRadius: 2,
-        pointBackgroundColor: "#38bdf8", fill: true, spanGaps: false
+        borderColor: '#38bdf8',
+        backgroundColor: 'rgba(56,189,248,0.07)',
+        borderWidth: 2,
+        tension: 0.35,
+        pointRadius: ctx => values[ctx.dataIndex] !== null ? 2 : 0,
+        pointBackgroundColor: '#38bdf8',
+        fill: true,
+        spanGaps: false
       }]
     },
     options: {
       ...darkOpts,
       plugins: {
         ...darkOpts.plugins,
-        tooltip: { callbacks: { label: ctx => ctx.parsed.y !== null ? ctx.parsed.y.toFixed(1) + " °C" : "Pas de données" } }
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.parsed.y !== null ? ctx.parsed.y.toFixed(1) + ' °C' : 'Pas de données'
+          }
+        }
       },
       scales: {
         x: {
           ticks: {
-            color: "#64748b", font: { family: "'Share Tech Mono'" },
-            /* Affiche seulement les heures rondes */
-            callback: (val, idx) => idx % 4 === 0 ? Math.floor(idx/4).toString().padStart(2,"0") + "h" : ""
+            color: '#64748b',
+            font: { family: "'Share Tech Mono'", size: 11 },
+            maxRotation: 0,
+            autoSkip: false,
+            /*
+             * Sur 96 bins :
+             * - Affiche l'heure (ex: "14h") sur les multiples de 4 (= heures rondes)
+             * - Affiche un tiret court sur les multiples de 1 (= quarts d'heure)
+             * - N'affiche rien sur les autres (mais la graduation reste visible)
+             */
+            callback: (val, idx) => {
+              if (idx % 4 === 0) return String(Math.floor(idx / 4)).padStart(2, '0') + 'h';
+              return ''; /* case vide = graduation 15min visible mais sans texte */
+            }
           },
-          grid: { color: "#1e3a5f" }
+          grid: {
+            color: ctx => ctx.index % 4 === 0 ? '#1e3a5f' : 'rgba(30,58,95,0.3)'
+          }
         },
-        y: { ticks: { color: "#64748b", font: { family: "'Share Tech Mono'" } }, grid: { color: "#1e3a5f" } }
+        y: {
+          ticks: { color: '#64748b', font: { family: "'Share Tech Mono'" } },
+          grid: { color: '#1e3a5f' }
+        }
       }
     }
   });
@@ -895,10 +1114,8 @@ async function loadData() {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
     surfaceData = { last, prev, surfaceScore, allData: data, stormData: data.filter(d => new Date(d.timestamp) >= oneHourAgo) };
 
-    /* Graphique jour */
-    const todayMidnight = new Date();
-    todayMidnight.setHours(0,0,0,0);
-    buildChart24h(data.filter(d => new Date(d.timestamp) >= todayMidnight));
+    /* Graphique jour — on passe TOUT data, buildChart24h filtre lui-même */
+    buildChart24h(data);
 
     /* Graphique 7 jours */
     const { labels: l7, mins, avgs, maxs } = binBy7Days(data);
@@ -1228,6 +1445,8 @@ async function loadLightning() {
 
     /* Mise à jour impacts sur la carte */
     if (layerState.strikes) updateStrikesOnMap(lightningHistory);
+    /* Détection et dessin des foyers orageux */
+    detectAndDrawFoci();
 
   } catch(err) { console.error("Erreur lightning:", err); document.getElementById("lgt-status").textContent = "Erreur : " + err.message; }
 }
