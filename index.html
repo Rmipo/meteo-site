@@ -900,6 +900,9 @@ function detectAndDrawFoci() {
     }
   });
 }
+
+/* Toggle visibilité d'une couche */
+function toggleLayer(name) {
   layerState[name] = !layerState[name];
   const btn = document.getElementById('btn-' + name);
   btn.classList.toggle('active', layerState[name]);
