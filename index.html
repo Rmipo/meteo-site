@@ -344,7 +344,7 @@ tbody tr:last-child td { border-bottom:none; }
     <div class="legend-item"><div class="legend-dot" style="background:#f97316"></div>Éclair 5–20 min</div>
     <div class="legend-item"><div class="legend-dot" style="background:#eab308"></div>Éclair 20–60 min</div>
     <div class="legend-item"><div class="legend-dot" style="background:#38bdf8"></div>Ma station</div>
-    <div class="legend-item"><div class="legend-dot" style="background:rgba(249,115,22,0.3); border:1px solid #f97316"></div>Cône trajectoire</div>
+    <div class="legend-item"><div class="legend-dot" style="background:rgba(249,115,22,0.5); border:1px solid #f97316"></div>Vecteurs trajectoire (±25 km)</div>
     <div style="margin-left:auto; font-size:0.85em;" id="map-status">Chargement...</div>
   </div>
 </div>
@@ -496,7 +496,7 @@ function initMap() {
 
   map = L.map('stormMap', {
     center: [LAT, LON],
-    zoom: 8,
+    zoom: 9,
     layers: [osmBase]
   });
 
@@ -559,13 +559,26 @@ async function updateRadarLayer() {
     if (!past.length) return;
 
     const latest = past[past.length - 1];
-    const tileUrl = `https://tilecache.rainviewer.com${latest.path}/256/{z}/{x}/{y}/2/1_1.png`;
+
+    /*
+     * URL correcte RainViewer tiles :
+     * - scheme : https://tilecache.rainviewer.com{path}/{size}/{z}/{x}/{y}/{color}/{options}.png
+     * - size   : 512 (meilleure résolution, supporte zoom 1-12)
+     * - color  : 2 (palette météo classique)
+     * - options: 1_1 (smooth + snow)
+     * Le zoom 9 est bien dans la plage supportée (1-12)
+     */
+    const tileUrl = `https://tilecache.rainviewer.com${latest.path}/512/{z}/{x}/{y}/2/1_1.png`;
 
     if (radarLayer) map.removeLayer(radarLayer);
 
     radarLayer = L.tileLayer(tileUrl, {
-      opacity: 0.55,
-      attribution: '© RainViewer'
+      opacity: 0.6,
+      attribution: '© RainViewer',
+      minZoom: 1,
+      maxZoom: 12,
+      tileSize: 256,   /* Leaflet affiche les tiles 512 en tileSize 256 → ×2 résolution */
+      zoomOffset: 1
     });
 
     if (layerState.radar) radarLayer.addTo(map);
@@ -576,98 +589,114 @@ async function updateRadarLayer() {
   } catch(e) { console.warn("Radar map:", e); }
 }
 
-/* Dessine le cône de trajectoire à partir du vecteur cellule */
-function drawCone(moveDeg, speedKmh) {
+/* Dessine deux vecteurs parallèles (bords de la cellule) avec flèches */
+function drawTrajectory(moveDeg, speedKmh, topoCorrection) {
   coneLayerGroup.clearLayers();
 
-  if (speedKmh < 3) return; /* vent trop faible, pas de trajectoire fiable */
+  if (speedKmh < 3) return;
 
-  const origin = [LAT, LON];
+  /*
+   * La direction affichée est moveDeg + correction topographique.
+   * topoCorrection est un angle en degrés (positif = déviation horaire).
+   * Calcul : si le terrain descend vers l'Ouest, les cellules venant du SO
+   * accélèrent légèrement et dévient vers le NE → correction positive.
+   */
+  const correctedDeg = (moveDeg + (topoCorrection || 0) + 360) % 360;
 
-  /* Distance projetée selon la vitesse :
-     à +30 min = speedKmh/2, à +60 min = speedKmh, à +90 min = speedKmh*1.5 */
-  const d30  = speedKmh * 0.5;
-  const d60  = speedKmh * 1.0;
-  const d90  = speedKmh * 1.5;
+  /* Largeur de la cellule estimée : 25 km de part et d'autre de l'axe */
+  const halfWidth = 25; /* km */
 
-  /* Angle d'ouverture du cône : 20° de chaque côté */
-  const halfAngle = 20;
+  /* Durées projetées */
+  const d60 = speedKmh * 1.0;
+  const d90 = speedKmh * 1.5;
 
-  /* Points du cône à 60 min */
-  const tip      = destinationPoint(LAT, LON, d60, moveDeg);
-  const leftEdge = destinationPoint(LAT, LON, d60, moveDeg - halfAngle);
-  const rightEdge= destinationPoint(LAT, LON, d60, moveDeg + halfAngle);
+  /* Direction perpendiculaire (pour décaler les deux vecteurs latéralement) */
+  const perpLeft  = (correctedDeg - 90 + 360) % 360;
+  const perpRight = (correctedDeg + 90) % 360;
 
-  /* Points du cône à 90 min (extrémité élargie) */
-  const tip90      = destinationPoint(LAT, LON, d90, moveDeg);
-  const leftEdge90 = destinationPoint(LAT, LON, d90, moveDeg - halfAngle - 5);
-  const rightEdge90= destinationPoint(LAT, LON, d90, moveDeg + halfAngle + 5);
+  /* Origines des deux vecteurs (décalés latéralement de halfWidth km) */
+  const originLeft  = destinationPoint(LAT, LON, halfWidth, perpLeft);
+  const originRight = destinationPoint(LAT, LON, halfWidth, perpRight);
 
-  /* Polygone cône (style prévision ouragan) */
-  const conePoints = [
-    origin,
-    leftEdge,
-    leftEdge90,
-    tip90,
-    rightEdge90,
-    rightEdge,
-    origin
-  ];
+  /* Extrémités à +60 et +90 min */
+  const endLeft60  = destinationPoint(originLeft[0],  originLeft[1],  d60, correctedDeg);
+  const endRight60 = destinationPoint(originRight[0], originRight[1], d60, correctedDeg);
+  const endLeft90  = destinationPoint(originLeft[0],  originLeft[1],  d90, correctedDeg);
+  const endRight90 = destinationPoint(originRight[0], originRight[1], d90, correctedDeg);
 
-  L.polygon(conePoints, {
-    color: '#f97316',
+  /* Ligne centrale (axe) en pointillés fins */
+  const center60 = destinationPoint(LAT, LON, d60, correctedDeg);
+  const center90 = destinationPoint(LAT, LON, d90, correctedDeg);
+
+  L.polyline([[LAT, LON], center90], {
+    color: '#f97316', weight: 1, opacity: 0.35, dashArray: '4 6'
+  }).addTo(coneLayerGroup);
+
+  /* Zone ombragée entre les deux vecteurs */
+  L.polygon([originLeft, endLeft90, endRight90, originRight], {
+    color: 'transparent',
     fillColor: '#f97316',
-    fillOpacity: 0.10,
-    weight: 1.5,
-    dashArray: '5 4'
+    fillOpacity: 0.08,
+    weight: 0
   }).addTo(coneLayerGroup);
 
-  /* Ligne centrale (axe de trajectoire) */
-  L.polyline([origin, tip90], {
-    color: '#f97316',
-    weight: 2.5,
-    opacity: 0.85
-  }).addTo(coneLayerGroup);
-
-  /* Flèche à la pointe (marqueur directionnel) */
-  const arrowIcon = L.divIcon({
-    html: `<div style="
-      font-size:22px;
-      transform: rotate(${moveDeg}deg);
-      line-height:1;
-      filter: drop-shadow(0 0 4px #f97316);
-    ">▲</div>`,
-    className: '',
-    iconSize: [24, 24],
-    iconAnchor: [12, 12]
-  });
-  L.marker(tip90, { icon: arrowIcon }).addTo(coneLayerGroup);
-
-  /* Marqueurs distance */
-  const mid30 = destinationPoint(LAT, LON, d30, moveDeg);
-  const mid60 = destinationPoint(LAT, LON, d60, moveDeg);
-
+  /* Les deux vecteurs principaux */
   [
-    { pt: mid30, label: '+30 min' },
-    { pt: mid60, label: '+60 min' },
-    { pt: tip90, label: '+90 min' }
-  ].forEach(({ pt, label }) => {
+    { origin: originLeft,  end60: endLeft60,  end90: endLeft90  },
+    { origin: originRight, end60: endRight60, end90: endRight90 }
+  ].forEach(({ origin, end60, end90 }) => {
+
+    /* Ligne principale */
+    L.polyline([origin, end90], {
+      color: '#f97316', weight: 2.5, opacity: 0.9
+    }).addTo(coneLayerGroup);
+
+    /* Flèche à la pointe */
+    const arrowIcon = L.divIcon({
+      html: `<div style="
+        font-size:16px;
+        transform: rotate(${correctedDeg}deg);
+        line-height:1;
+        color:#f97316;
+        filter: drop-shadow(0 0 3px #f97316);
+      ">▲</div>`,
+      className: '',
+      iconSize: [16,16],
+      iconAnchor: [8,8]
+    });
+    L.marker(end90, { icon: arrowIcon }).addTo(coneLayerGroup);
+
+    /* Tiret à +60 min sur chaque vecteur */
+    L.circleMarker(end60, {
+      radius: 3, color: '#f97316', fillColor: '#f97316', fillOpacity: 1, weight: 0
+    }).addTo(coneLayerGroup);
+  });
+
+  /* Labels +60 et +90 min sur l'axe central */
+  [
+    { pt: center60, label: '+60 min', dist: d60.toFixed(0) + ' km' },
+    { pt: center90, label: '+90 min', dist: d90.toFixed(0) + ' km' }
+  ].forEach(({ pt, label, dist }) => {
     L.marker(pt, {
       icon: L.divIcon({
-        html: `<div style="font-family:'Share Tech Mono',monospace; font-size:10px; color:#f97316; background:rgba(2,6,23,0.8); padding:2px 5px; border-radius:4px; border:1px solid #f97316; white-space:nowrap;">${label}</div>`,
+        html: `<div style="font-family:'Share Tech Mono',monospace; font-size:10px; color:#f97316; background:rgba(2,6,23,0.85); padding:2px 6px; border-radius:4px; border:1px solid rgba(249,115,22,0.5); white-space:nowrap;">${label} · ${dist}</div>`,
         className: '',
-        iconAnchor: [20, 8]
+        iconAnchor: [30, 6]
       })
     }).addTo(coneLayerGroup);
   });
 
-  /* Lignes latérales (bords du cône bien visibles) */
-  L.polyline([origin, leftEdge90], {
-    color: '#f97316', weight: 1.5, opacity: 0.5, dashArray: '4 4'
-  }).addTo(coneLayerGroup);
-  L.polyline([origin, rightEdge90], {
-    color: '#f97316', weight: 1.5, opacity: 0.5, dashArray: '4 4'
-  }).addTo(coneLayerGroup);
+  /* Info correction topo en popup sur la station */
+  if (topoCorrection && Math.abs(topoCorrection) > 1) {
+    const sign = topoCorrection > 0 ? '+' : '';
+    L.marker([LAT, LON], {
+      icon: L.divIcon({
+        html: `<div style="font-family:'Share Tech Mono',monospace; font-size:9px; color:#a78bfa; background:rgba(2,6,23,0.85); padding:2px 5px; border-radius:4px; border:1px solid rgba(167,139,250,0.4); white-space:nowrap; margin-top:20px;">Topo ${sign}${topoCorrection.toFixed(1)}°</div>`,
+        className: '',
+        iconAnchor: [-5, -5]
+      })
+    }).addTo(coneLayerGroup);
+  }
 }
 
 /* Place les impacts d'éclairs sur la carte */
@@ -721,15 +750,50 @@ function buildChart24h(data) {
   const now      = new Date();
   const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
 
+  /**
+   * Parsing robuste du timestamp Google Sheets.
+   * Google Sheets retourne souvent "2025/04/11 20:34:00" ou "2025-04-11T20:34:00"
+   * ou un objet Date sérialisé. On normalise tout ici.
+   * On traite TOUJOURS comme heure locale France (pas UTC).
+   */
+  function parseTS(raw) {
+    if (!raw) return null;
+    let s = String(raw).trim();
+    /* Format "Sat Apr 12 2025 20:34:00 GMT+0200" → déjà parsable */
+    /* Format "2025/04/11 20:34:00" → remplacer / par - */
+    s = s.replace(/\//g, '-');
+    /* Format "2025-04-11 20:34:00" → ajouter T pour ISO */
+    s = s.replace(' ', 'T');
+    /* Si pas de fuseau et format ISO local → interpréter comme heure locale */
+    /* On force en ajoutant l'offset France si absent */
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s) && !s.includes('Z') && !s.includes('+') && !s.includes('-', 10)) {
+      /* Pas de timezone → on suppose heure locale du navigateur (France) */
+      return new Date(s);
+    }
+    return new Date(s);
+  }
+
   const values = labels.map((_, i) => {
     const start = new Date(midnight.getTime() + i * 15 * 60 * 1000);
     const end   = new Date(start.getTime() + 15 * 60 * 1000);
     const pts   = data
-      .filter(d => { const t = new Date(d.timestamp); return t >= start && t < end; })
+      .filter(d => {
+        const t = parseTS(d.timestamp);
+        return t && !isNaN(t) && t >= start && t < end;
+      })
       .map(d => parseFloat(d.temperature))
       .filter(v => !isNaN(v));
     return pts.length ? parseFloat((pts.reduce((a,b)=>a+b,0)/pts.length).toFixed(1)) : null;
   });
+
+  /* Debug : affiche dans la console le nb de points parsés et leur plage horaire */
+  const allParsed = data.map(d => parseTS(d.timestamp)).filter(t => t && !isNaN(t));
+  if (allParsed.length) {
+    const minT = new Date(Math.min(...allParsed));
+    const maxT = new Date(Math.max(...allParsed));
+    console.log(`[Chart24h] ${allParsed.length} pts · de ${minT.toLocaleTimeString('fr-FR')} à ${maxT.toLocaleTimeString('fr-FR')} · minuit local = ${midnight.toLocaleString('fr-FR')}`);
+    console.log('[Chart24h] Exemple timestamp brut:', data[0].timestamp, '→ parsé:', parseTS(data[0].timestamp));
+  }
 
   const dateTitre = now.toLocaleDateString("fr-FR", { weekday:"long", day:"numeric", month:"long" });
   document.getElementById("chart24h-title").textContent = "📈 Température — " + dateTitre + " (moyenne 15 min)";
@@ -866,12 +930,100 @@ async function loadData() {
 }
 
 /* ============================================================
-   CHARGEMENT DONNÉES ALTITUDE (Open-Meteo)
+   CORRECTION TOPOGRAPHIQUE (Open-Meteo elevation API)
+   Calcule la pente dominante du terrain autour de la station
+   et retourne un angle de correction en degrés.
+   Chargé une seule fois au démarrage.
+   ============================================================ */
+let topoCorrection = 0; /* degrés, global */
+
+async function loadTopoCorrection() {
+  try {
+    /*
+     * On échantillonne 8 points autour de la station à ~15 km
+     * dans les 8 directions cardinales et diagonales.
+     * On calcule ensuite le vecteur de pente dominant
+     * (vers où le terrain "descend le plus"),
+     * ce qui correspond à la direction préférentielle de canalisation
+     * des cellules orageuses par la topographie.
+     */
+    const dist = 0.135; /* ~15 km en degrés latitude */
+    const points = [
+      { lat: LAT + dist,         lon: LON,         dir: 0   },  /* N  */
+      { lat: LAT + dist*0.707,   lon: LON + dist*0.707, dir: 45  },  /* NE */
+      { lat: LAT,                lon: LON + dist,   dir: 90  },  /* E  */
+      { lat: LAT - dist*0.707,   lon: LON + dist*0.707, dir: 135 },  /* SE */
+      { lat: LAT - dist,         lon: LON,           dir: 180 },  /* S  */
+      { lat: LAT - dist*0.707,   lon: LON - dist*0.707, dir: 225 },  /* SO */
+      { lat: LAT,                lon: LON - dist,    dir: 270 },  /* O  */
+      { lat: LAT + dist*0.707,   lon: LON - dist*0.707, dir: 315 },  /* NO */
+      { lat: LAT,                lon: LON,            dir: null }  /* centre */
+    ];
+
+    const lats = points.map(p => p.lat).join(',');
+    const lons = points.map(p => p.lon).join(',');
+
+    const res  = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lons}`);
+    const data = await res.json();
+    const elev = data.elevation; /* tableau [N, NE, E, SE, S, SO, O, NO, centre] */
+
+    if (!elev || elev.length < 9) return;
+
+    const center = elev[8];
+
+    /*
+     * Calcul du vecteur gradient :
+     * Pour chaque direction d, la pente = (elev_centre - elev_d) / dist_km
+     * Un gradient positif = terrain monte dans cette direction
+     * Un gradient négatif = terrain descend dans cette direction
+     * On fait la somme vectorielle des gradients → vecteur de descente dominant
+     */
+    let gx = 0, gy = 0;
+    points.slice(0, 8).forEach((p, i) => {
+      const slope = center - elev[i]; /* positif = centre plus haut → descente vers p */
+      const rad   = degToRad(p.dir);
+      gx += slope * Math.sin(rad);
+      gy += slope * Math.cos(rad);
+    });
+
+    /* Direction de la pente dominante (vers où ça descend) */
+    const slopeDirRad = Math.atan2(gx, gy);
+    const slopeDirDeg = ((radToDeg(slopeDirRad) + 360) % 360);
+    const slopeMag    = Math.sqrt(gx*gx + gy*gy);
+
+    /*
+     * Correction sur la direction du vent :
+     * Les cellules orageuses sont légèrement déviées vers la direction
+     * de la pente descendante (effet de canalisation).
+     * On applique une correction proportionnelle à la magnitude du gradient,
+     * plafonnée à ±15° pour rester physiquement réaliste.
+     */
+    if (slopeMag > 0.5) {
+      const windDeg = cellVector.moveDeg;
+      /* Angle entre direction vent et pente → si pente est "à droite" du vent → déviation positive */
+      let diff = ((slopeDirDeg - windDeg + 540) % 360) - 180;
+      /* Correction = sin(diff) * facteur proportionnel à magnitude */
+      topoCorrection = Math.max(-15, Math.min(15, Math.sin(degToRad(diff)) * Math.min(slopeMag / 5, 1) * 15));
+    } else {
+      topoCorrection = 0;
+    }
+
+    console.log(`[Topo] Centre: ${center.toFixed(0)}m | Pente dominante: ${slopeDirDeg.toFixed(0)}° | Magnitude: ${slopeMag.toFixed(1)} | Correction: ${topoCorrection.toFixed(1)}°`);
+
+  } catch(e) {
+    console.warn("Topo correction:", e);
+    topoCorrection = 0;
+  }
+}
+
+/* ============================================================
+   CHARGEMENT DONNÉES ALTITUDE (Open-Meteo) — 3 niveaux : 500+700+850 hPa
    ============================================================ */
 async function loadUpperAtmosphere() {
   try {
     const api = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}` +
       `&hourly=windspeed_850hPa,winddirection_850hPa,windspeed_700hPa,winddirection_700hPa,` +
+      `windspeed_500hPa,winddirection_500hPa,` +
       `cape,lifted_index,k_index,temperature_500hPa&forecast_days=1&timezone=Europe%2FParis`;
 
     const res  = await fetch(api);
@@ -882,37 +1034,59 @@ async function loadUpperAtmosphere() {
     const d850 = data.hourly.winddirection_850hPa[hour] ?? 0;
     const s700 = data.hourly.windspeed_700hPa[hour]     ?? 0;
     const d700 = data.hourly.winddirection_700hPa[hour] ?? 0;
+    const s500 = data.hourly.windspeed_500hPa?.[hour]   ?? 0;
+    const d500 = data.hourly.winddirection_500hPa?.[hour] ?? 0;
     const cape = data.hourly.cape?.[hour]               ?? 0;
     const li   = data.hourly.lifted_index?.[hour]       ?? 0;
     const kIdx = data.hourly.k_index?.[hour]            ?? 0;
 
-    const avg     = vectorAverage(s850, d850, s700, d700);
-    const shear   = Math.abs(s700 - s850);
-    const moveDeg = movementDir(avg.dir);
+    /*
+     * Moyenne vectorielle pondérée sur 3 niveaux :
+     * 850 hPa (~1500 m) : poids 0.5 — niveau moteur des orages en surface
+     * 700 hPa (~3000 m) : poids 0.35 — niveau moyen de déplacement
+     * 500 hPa (~5500 m) : poids 0.15 — pilotage synoptique
+     */
+    const u = s850*0.5*Math.cos(degToRad(d850)) + s700*0.35*Math.cos(degToRad(d700)) + s500*0.15*Math.cos(degToRad(d500));
+    const v = s850*0.5*Math.sin(degToRad(d850)) + s700*0.35*Math.sin(degToRad(d700)) + s500*0.15*Math.sin(degToRad(d500));
+    const avgSpeed = Math.sqrt(u*u + v*v);
+    let   avgDir   = radToDeg(Math.atan2(v, u));
+    if (avgDir < 0) avgDir += 360;
 
-    /* Partage pour la carte */
-    cellVector = { speed: avg.speed, moveDeg };
+    const shear   = Math.abs(s700 - s850);
+    const moveDeg = movementDir(avgDir);
+
+    /* Partage pour la carte et la correction topo */
+    cellVector = { speed: avgSpeed, moveDeg };
+
+    /* Recalcul correction topo avec le nouveau vecteur */
+    await loadTopoCorrection();
+
+    const correctedMoveDeg = (moveDeg + (topoCorrection || 0) + 360) % 360;
 
     let eta = "--";
-    if (avg.speed > 3) { eta = Math.round((10/avg.speed)*60) + " min"; }
+    if (avgSpeed > 3) { eta = Math.round((10/avgSpeed)*60) + " min"; }
 
-    document.getElementById("stormVector").textContent = "Vent cellule : " + avg.speed.toFixed(1) + " km/h (" + Math.round(avg.dir) + "°)";
-    document.getElementById("stormArrow").textContent     = arrowFromDeg(moveDeg);
+    document.getElementById("stormVector").textContent =
+      "Vent cellule : " + avgSpeed.toFixed(1) + " km/h (" + Math.round(avgDir) + "°)" +
+      (topoCorrection ? " → corrigé " + correctedMoveDeg.toFixed(0) + "° (topo)" : "");
+    document.getElementById("stormArrow").textContent     = arrowFromDeg(correctedMoveDeg);
     document.getElementById("stormETA").textContent       = "Arrivée estimée (10 km) : " + eta;
-    document.getElementById("stormDirection").textContent = "Direction déplacement : " + arrowFromDeg(moveDeg) + " (" + Math.round(moveDeg) + "°)";
+    document.getElementById("stormDirection").textContent =
+      "Direction déplacement : " + arrowFromDeg(correctedMoveDeg) + " (" + correctedMoveDeg.toFixed(0) + "°)";
 
     let shearTxt = "Faible";
     if      (shear > 30) shearTxt = "Très fort ⚠️";
     else if (shear > 20) shearTxt = "Fort";
     else if (shear > 10) shearTxt = "Modéré";
-    document.getElementById("shearInfo").textContent = "Cisaillement : " + shear.toFixed(1) + " km/h (" + shearTxt + ")";
+    document.getElementById("shearInfo").textContent =
+      "Cisaillement 850→700 : " + shear.toFixed(1) + " km/h (" + shearTxt + ")";
 
     document.getElementById("atmo-cape").textContent   = Math.round(cape) + " J/kg";
     document.getElementById("atmo-cape-i").textContent = cape>2000?"Extrême ⚠️":cape>1000?"Fort":cape>500?"Modéré":cape>200?"Faible":"Nul";
-    document.getElementById("atmo-li").textContent   = li.toFixed(1);
-    document.getElementById("atmo-li-i").textContent = li<-6?"Extrême ⚠️":li<-4?"Très instable":li<-2?"Instable":li<0?"Lég. instable":"Stable";
-    document.getElementById("atmo-k").textContent   = Math.round(kIdx);
-    document.getElementById("atmo-k-i").textContent = kIdx>35?"Orage probable ⚠️":kIdx>30?"Risque élevé":kIdx>25?"Risque modéré":"Faible risque";
+    document.getElementById("atmo-li").textContent     = li.toFixed(1);
+    document.getElementById("atmo-li-i").textContent   = li<-6?"Extrême ⚠️":li<-4?"Très instable":li<-2?"Instable":li<0?"Lég. instable":"Stable";
+    document.getElementById("atmo-k").textContent      = Math.round(kIdx);
+    document.getElementById("atmo-k-i").textContent    = kIdx>35?"Orage probable ⚠️":kIdx>30?"Risque élevé":kIdx>25?"Risque modéré":"Faible risque";
 
     let convScore = 0;
     if (cape>2000) convScore+=40; else if (cape>1000) convScore+=30; else if (cape>500) convScore+=20; else if (cape>200) convScore+=10;
@@ -950,8 +1124,8 @@ async function loadUpperAtmosphere() {
       if (i <= activity.level) dot.classList.add("on-"+i);
     }
 
-    /* Mise à jour cône sur la carte */
-    if (layerState.cone) drawCone(moveDeg, avg.speed);
+    /* Mise à jour trajectoire sur la carte avec correction topo */
+    if (layerState.cone) drawTrajectory(moveDeg, avgSpeed, topoCorrection);
 
     /* Graphique orage */
     const stormSection = document.getElementById("stormSection");
@@ -981,6 +1155,8 @@ async function loadUpperAtmosphere() {
     } else {
       stormSection.style.display = "none";
     }
+
+    console.log(`[Atmo] Score: ${globalScoreV2} | Vent: ${avgSpeed.toFixed(1)} km/h → ${correctedMoveDeg.toFixed(0)}° (topo: ${topoCorrection.toFixed(1)}°) | 850=${s850}km/h ${d850}° | 700=${s700}km/h ${d700}° | 500=${s500}km/h ${d500}°`);
 
   } catch(err) { console.error("Erreur loadUpperAtmosphere:", err); }
 }
