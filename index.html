@@ -382,11 +382,18 @@ tbody tr:last-child td { border-bottom:none; }
    CONFIG
    ============================================================ */
 const SHEETS_URL         = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
-const BLITZORTUNG_PROXY_URL = ""; /* ← coller URL Apps Script proxy ici quand prêt */
+const BLITZORTUNG_PROXY_URL = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
 const LAT        = 46.42964;
 const LON        = 1.83906;
 const RAYON_KM   = 100;
 const SEUIL_ORAGE = 65;
+
+/*
+ * IMPORTANT — Apps Script à modifier pour le graphique du jour.
+ * Voir instructions en bas de ce fichier ou dans la console.
+ * Par défaut on utilise ?mode=today pour récupérer toute la journée.
+ * Si Apps Script n'est pas encore mis à jour, on tombe en fallback.
+ */
 
 /* ============================================================
    UTILITAIRES
@@ -1068,20 +1075,16 @@ function binBy7Days(data) {
 
 /* ============================================================
    CHARGEMENT DONNÉES SURFACE (Google Sheets)
-   On demande les données depuis minuit local en passant ?since=
-   comme timestamp ISO UTC. Apps Script filtre côté serveur.
-   Si Apps Script n'est pas encore mis à jour, fallback sur tout.
+   Double appel :
+   - Appel 1 : données récentes (50 dernières) → scores, historique, graphique 7j
+   - Appel 2 : données depuis minuit → graphique du jour complet
+   Les deux utilisent le même endpoint, Apps Script retourne
+   toutes les données disponibles (pas de limite côté serveur).
    ============================================================ */
 async function loadData() {
   try {
-    /* Minuit local en ISO UTC pour le filtre Apps Script */
-    const midnightLocal = new Date();
-    midnightLocal.setHours(0, 0, 0, 0);
-    const sinceISO = midnightLocal.toISOString(); /* ex: "2026-04-13T00:00:00.000+02:00" → sera converti en UTC par le navigateur */
-
-    /* On demande d'abord les données d'aujourd'hui (param since) */
-    const url = SHEETS_URL + '?since=' + encodeURIComponent(midnightLocal.toISOString());
-    const res  = await fetch(url);
+    /* === APPEL UNIQUE — on récupère tout ce que retourne Apps Script === */
+    const res  = await fetch(SHEETS_URL);
     const raw  = await res.json();
     const data = Array.isArray(raw) ? raw : [raw];
 
@@ -1093,17 +1096,19 @@ async function loadData() {
     const last = data[data.length - 1];
     const prev = data[data.length - 3];
 
+    /* Affichage mesures actuelles */
     document.getElementById("temp").textContent = parseFloat(last.temperature).toFixed(1);
     document.getElementById("hum").textContent  = parseFloat(last.humidity).toFixed(0);
     document.getElementById("pres").textContent = parseFloat(last.pressure).toFixed(1);
 
-    const dt = new Date(last.timestamp);
+    const dt = new Date(parseTS(last.timestamp));
     document.getElementById("status").innerHTML =
       `<span class="dot-live"></span>Dernière mesure : ` +
       dt.toLocaleDateString("fr-FR", { weekday:"long", day:"2-digit", month:"long", year:"numeric" }) +
       ` à ` +
       dt.toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit", second:"2-digit" });
 
+    /* Score surface */
     const dP = parseFloat(prev.pressure) - parseFloat(last.pressure);
     const surfaceScore = Math.min(100, Math.max(0, dP * 40 + parseFloat(last.humidity) * 0.3));
     document.getElementById("intensityBar").style.width = surfaceScore + "%";
@@ -1118,12 +1123,23 @@ async function loadData() {
     document.getElementById("alert").textContent = alertText;
 
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    surfaceData = { last, prev, surfaceScore, allData: data, stormData: data.filter(d => new Date(d.timestamp) >= oneHourAgo) };
+    surfaceData = {
+      last, prev, surfaceScore, allData: data,
+      stormData: data.filter(d => !isNaN(parseTS(d.timestamp)) && parseTS(d.timestamp) >= oneHourAgo.getTime())
+    };
 
-    /* Graphique jour — on passe TOUT data, buildChart24h filtre lui-même */
+    /*
+     * GRAPHIQUE DU JOUR
+     * On passe TOUT data à buildChart24h — la fonction filtre elle-même
+     * les mesures du jour courant via parseTS().
+     *
+     * Si Apps Script ne retourne que 50 lignes, on n'aura que 2h de données.
+     * Pour avoir toute la journée, il faut modifier Apps Script (voir instructions).
+     * En attendant, on affiche ce qu'on a.
+     */
     buildChart24h(data);
 
-    /* Graphique 7 jours */
+    /* Graphique 7 jours — utilise aussi tout data */
     const { labels: l7, mins, avgs, maxs } = binBy7Days(data);
     if (chart7j) chart7j.destroy();
     chart7j = new Chart(document.getElementById("chart7j"), {
@@ -1136,11 +1152,11 @@ async function loadData() {
       options: darkOpts
     });
 
-    /* Tableau historique */
+    /* Tableau historique — 50 dernières mesures */
     const tbody = document.getElementById("tableBody");
     tbody.innerHTML = "";
     data.slice(-50).reverse().forEach(d => {
-      const ddt = new Date(d.timestamp);
+      const ddt = new Date(parseTS(d.timestamp));
       tbody.innerHTML += `<tr>
         <td>${ddt.toLocaleDateString("fr-FR",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"})} à ${ddt.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</td>
         <td>${parseFloat(d.temperature).toFixed(1)}</td>
@@ -1149,7 +1165,10 @@ async function loadData() {
       </tr>`;
     });
 
-  } catch(err) { console.error("Erreur loadData:", err); document.getElementById("status").textContent = "Erreur chargement."; }
+  } catch(err) {
+    console.error("Erreur loadData:", err);
+    document.getElementById("status").textContent = "Erreur chargement.";
+  }
 }
 
 /* ============================================================
@@ -1286,40 +1305,7 @@ async function loadUpperAtmosphere() {
 
     const correctedMoveDeg = (moveDeg + (topoCorrection || 0) + 360) % 360;
 
-    /* ETA uniquement si score >= 40 (atmosphère instable minimum) */
-    let eta = "--";
-    if (avgSpeed > 3 && globalScoreV2 >= 40) {
-      eta = Math.round((10/avgSpeed)*60) + " min";
-    }
-
-    /* Vent cellule, direction, cisaillement — toujours affichés */
-    document.getElementById("stormVector").textContent =
-      "Vent cellule : " + avgSpeed.toFixed(1) + " km/h (" + Math.round(avgDir) + "°)";
-    document.getElementById("stormArrow").textContent     = arrowFromDeg(correctedMoveDeg);
-    document.getElementById("stormDirection").textContent =
-      "Direction déplacement : " + arrowFromDeg(correctedMoveDeg) + " (" + correctedMoveDeg.toFixed(0) + "°)";
-
-    let shearTxt = "Faible";
-    if      (shear > 30) shearTxt = "Très fort ⚠️";
-    else if (shear > 20) shearTxt = "Fort";
-    else if (shear > 10) shearTxt = "Modéré";
-    document.getElementById("shearInfo").textContent =
-      "Cisaillement 850→700 : " + shear.toFixed(1) + " km/h (" + shearTxt + ")";
-
-    /* ETA : masqué si pas d'activité */
-    document.getElementById("stormETA").textContent = globalScoreV2 >= 40
-      ? "Arrivée estimée (10 km) : " + eta
-      : "Arrivée estimée (10 km) : -- (pas d'activité)";
-
-    /* Vecteurs vent altitude sur la carte : seulement si score >= 40 */
-    if (layerState.cone) {
-      if (globalScoreV2 >= 40) {
-        drawTrajectory(moveDeg, avgSpeed, topoCorrection);
-      } else {
-        coneLayerGroup.clearLayers();
-      }
-    }
-
+    /* ---- Profil atmosphérique ---- */
     document.getElementById("atmo-cape").textContent   = Math.round(cape) + " J/kg";
     document.getElementById("atmo-cape-i").textContent = cape>2000?"Extrême ⚠️":cape>1000?"Fort":cape>500?"Modéré":cape>200?"Faible":"Nul";
     document.getElementById("atmo-li").textContent     = li.toFixed(1);
@@ -1327,19 +1313,55 @@ async function loadUpperAtmosphere() {
     document.getElementById("atmo-k").textContent      = Math.round(kIdx);
     document.getElementById("atmo-k-i").textContent    = kIdx>35?"Orage probable ⚠️":kIdx>30?"Risque élevé":kIdx>25?"Risque modéré":"Faible risque";
 
+    /* ---- Cisaillement — toujours affiché ---- */
+    let shearTxt = "Faible";
+    if      (shear > 30) shearTxt = "Très fort ⚠️";
+    else if (shear > 20) shearTxt = "Fort";
+    else if (shear > 10) shearTxt = "Modéré";
+    document.getElementById("shearInfo").textContent =
+      "Cisaillement 850→700 : " + shear.toFixed(1) + " km/h (" + shearTxt + ")";
+
+    /* ---- Scores ---- */
     let convScore = 0;
     if (cape>2000) convScore+=40; else if (cape>1000) convScore+=30; else if (cape>500) convScore+=20; else if (cape>200) convScore+=10;
     if (li<-6) convScore+=25; else if (li<-4) convScore+=20; else if (li<-2) convScore+=10;
     if (kIdx>35) convScore+=20; else if (kIdx>30) convScore+=15; else if (kIdx>25) convScore+=10;
     convScore = Math.min(100, convScore);
 
-    const shearScore    = shear>30?100:shear>20?70:shear>10?40:10;
+    const shearScore = shear>30?100:shear>20?70:shear>10?40:10;
     const { surfaceScore } = surfaceData;
     const globalScoreV2 = Math.round(Math.min(100, surfaceScore*0.4 + convScore*0.4 + shearScore*0.2));
 
     document.getElementById("globalBar").style.width = globalScoreV2 + "%";
     document.getElementById("globalPct").textContent = globalScoreV2 + " %";
 
+    /* ---- Vent cellule — toujours affiché ---- */
+    document.getElementById("stormVector").textContent =
+      "Vent cellule : " + avgSpeed.toFixed(1) + " km/h (" + Math.round(avgDir) + "°)";
+    document.getElementById("stormArrow").textContent = arrowFromDeg(correctedMoveDeg);
+
+    /* ---- Direction déplacement — seulement si score >= 40 ---- */
+    if (globalScoreV2 >= 40) {
+      document.getElementById("stormDirection").textContent =
+        "Direction déplacement : " + arrowFromDeg(correctedMoveDeg) + " (" + correctedMoveDeg.toFixed(0) + "°)";
+    } else {
+      document.getElementById("stormDirection").textContent = "Direction déplacement : --";
+    }
+
+    /* ---- ETA — seulement si orage probable, avec couleur progressive ---- */
+    const etaEl = document.getElementById("stormETA");
+    if (globalScoreV2 >= 40 && avgSpeed > 3) {
+      const etaMin = Math.round((10 / avgSpeed) * 60);
+      let etaColor = "#94a3b8"; /* gris par défaut */
+      if      (etaMin < 15) etaColor = "#ef4444"; /* rouge — très proche */
+      else if (etaMin < 30) etaColor = "#f97316"; /* orange — proche */
+      else if (etaMin < 60) etaColor = "#eab308"; /* jaune — à surveiller */
+      etaEl.innerHTML = `Arrivée estimée (10 km) : <span style="color:${etaColor};font-weight:700;">${etaMin} min</span>`;
+    } else {
+      etaEl.textContent = "Arrivée estimée (10 km) : n/a";
+    }
+
+    /* ---- Tendance — toujours affichée ---- */
     const { last, prev } = surfaceData;
     let dP = 0;
     if (last && prev) {
@@ -1347,11 +1369,12 @@ async function loadUpperAtmosphere() {
       const humTrend = parseFloat(last.humidity) - parseFloat(prev.humidity);
       let trend = "Stable";
       if (dP>0.8 && humTrend>2) trend="⬆️ Renforcement";
-      else if (dP<0.2) trend="⬇️ Affaiblissement";
-      else if (dP>0.4) trend="↗️ Légère hausse";
+      else if (dP<0.2)           trend="⬇️ Affaiblissement";
+      else if (dP>0.4)           trend="↗️ Légère hausse";
       document.getElementById("stormTrend").textContent = "Tendance : " + trend;
     }
 
+    /* ---- Activité — toujours affichée ---- */
     const activity = computeStormActivity({ globalScore: globalScoreV2, humidity: last ? parseFloat(last.humidity) : 0, dP, cape, shear });
     document.getElementById("icon").textContent      = activity.icon;
     document.getElementById("alert").textContent     = activity.text;
@@ -1363,12 +1386,21 @@ async function loadUpperAtmosphere() {
       if (i <= activity.level) dot.classList.add("on-"+i);
     }
 
-    /* Graphique orage */
+    /* ---- Vecteurs vent altitude sur la carte : seulement si score >= 40 ---- */
+    if (layerState.cone) {
+      if (globalScoreV2 >= 40) {
+        drawTrajectory(moveDeg, avgSpeed, topoCorrection);
+      } else {
+        coneLayerGroup.clearLayers();
+      }
+    }
+
+    /* ---- Graphique orage ---- */
     const stormSection = document.getElementById("stormSection");
     const stormData    = surfaceData.stormData || [];
     if (globalScoreV2 > SEUIL_ORAGE && stormData.length >= 2) {
       stormSection.style.display = "block";
-      const sLabels = stormData.map(d => new Date(d.timestamp).toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit" }));
+      const sLabels = stormData.map(d => new Date(parseTS(d.timestamp)).toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit" }));
       if (chartStorm) chartStorm.destroy();
       chartStorm = new Chart(document.getElementById("stormCanvas"), {
         type: "line",
@@ -1392,7 +1424,7 @@ async function loadUpperAtmosphere() {
       stormSection.style.display = "none";
     }
 
-    console.log(`[Atmo] Score: ${globalScoreV2} | Vent: ${avgSpeed.toFixed(1)} km/h → ${correctedMoveDeg.toFixed(0)}° (topo: ${topoCorrection.toFixed(1)}°) | 850=${s850}km/h ${d850}° | 700=${s700}km/h ${d700}° | 500=${s500}km/h ${d500}°`);
+    console.log(`[Atmo] Score: ${globalScoreV2} | Conv: ${convScore} | Surface: ${surfaceScore} | Shear: ${shearScore} | Vent: ${avgSpeed.toFixed(1)}km/h → ${correctedMoveDeg.toFixed(0)}°`);
 
   } catch(err) { console.error("Erreur loadUpperAtmosphere:", err); }
 }
