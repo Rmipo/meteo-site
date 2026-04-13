@@ -382,7 +382,7 @@ tbody tr:last-child td { border-bottom:none; }
    CONFIG
    ============================================================ */
 const SHEETS_URL         = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
-const BLITZORTUNG_PROXY_URL = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec"; /* ← coller URL Apps Script proxy ici quand prêt */
+const BLITZORTUNG_PROXY_URL = ""; /* ← coller URL Apps Script proxy ici quand prêt */
 const LAT        = 46.42964;
 const LON        = 1.83906;
 const RAYON_KM   = 100;
@@ -923,22 +923,14 @@ function parseTS(raw) {
   /* Normaliser les séparateurs */
   s = s.replace(/\//g, '-').replace(' ', 'T');
 
-  const ms = new Date(s).getTime();
-  if (isNaN(ms)) return NaN;
-
   /*
-   * Clé du bug : si le timestamp se termine par 'Z' ou '+00:00'
-   * c'est de l'UTC pur → on le convertit en heure locale en ajoutant
-   * l'offset du navigateur (ex: UTC+2 = +120 min en avril en France).
-   * Sans suffixe timezone, le navigateur interprète déjà en local → OK.
+   * new Date("2026-04-13T13:47:00.000Z") retourne le bon epoch UTC.
+   * Quand on appelle ensuite new Date(ms).getHours() dans le navigateur,
+   * JS convertit automatiquement en heure locale (UTC+2 en France = 15h47).
+   * Donc on retourne simplement l'epoch brut — pas besoin de correction manuelle.
+   * Le bug précédent ajoutait +2h en trop.
    */
-  const isUTC = s.endsWith('Z') || s.endsWith('+00:00') || s.endsWith('+0000');
-  if (isUTC) {
-    /* Ajouter l'offset local (en ms) pour ramener en heure locale */
-    const offsetMs = new Date().getTimezoneOffset() * -60 * 1000; /* négatif en France */
-    return ms + offsetMs;
-  }
-  return ms;
+  return new Date(s).getTime();
 }
 
 /* ============================================================
@@ -1075,14 +1067,28 @@ function binBy7Days(data) {
 }
 
 /* ============================================================
-   CHARGEMENT DONNÉES SURFACE
+   CHARGEMENT DONNÉES SURFACE (Google Sheets)
+   On demande les données depuis minuit local en passant ?since=
+   comme timestamp ISO UTC. Apps Script filtre côté serveur.
+   Si Apps Script n'est pas encore mis à jour, fallback sur tout.
    ============================================================ */
 async function loadData() {
   try {
-    const res  = await fetch(SHEETS_URL);
+    /* Minuit local en ISO UTC pour le filtre Apps Script */
+    const midnightLocal = new Date();
+    midnightLocal.setHours(0, 0, 0, 0);
+    const sinceISO = midnightLocal.toISOString(); /* ex: "2026-04-13T00:00:00.000+02:00" → sera converti en UTC par le navigateur */
+
+    /* On demande d'abord les données d'aujourd'hui (param since) */
+    const url = SHEETS_URL + '?since=' + encodeURIComponent(midnightLocal.toISOString());
+    const res  = await fetch(url);
     const raw  = await res.json();
     const data = Array.isArray(raw) ? raw : [raw];
-    if (data.length < 3) { document.getElementById("status").textContent = "Données insuffisantes."; return; }
+
+    if (data.length < 3) {
+      document.getElementById("status").textContent = "Données insuffisantes.";
+      return;
+    }
 
     const last = data[data.length - 1];
     const prev = data[data.length - 3];
@@ -1286,23 +1292,12 @@ async function loadUpperAtmosphere() {
       eta = Math.round((10/avgSpeed)*60) + " min";
     }
 
+    /* Vent cellule, direction, cisaillement — toujours affichés */
     document.getElementById("stormVector").textContent =
       "Vent cellule : " + avgSpeed.toFixed(1) + " km/h (" + Math.round(avgDir) + "°)";
     document.getElementById("stormArrow").textContent     = arrowFromDeg(correctedMoveDeg);
-    document.getElementById("stormETA").textContent       = globalScoreV2 >= 40
-      ? "Arrivée estimée (10 km) : " + eta
-      : "Arrivée estimée (10 km) : -- (pas d'activité)";
     document.getElementById("stormDirection").textContent =
       "Direction déplacement : " + arrowFromDeg(correctedMoveDeg) + " (" + correctedMoveDeg.toFixed(0) + "°)";
-
-    /* Vecteurs vent altitude sur la carte : seulement si score >= 40 */
-    if (layerState.cone) {
-      if (globalScoreV2 >= 40) {
-        drawTrajectory(moveDeg, avgSpeed, topoCorrection);
-      } else {
-        coneLayerGroup.clearLayers(); /* Pas d'activité → on efface */
-      }
-    }
 
     let shearTxt = "Faible";
     if      (shear > 30) shearTxt = "Très fort ⚠️";
@@ -1310,6 +1305,20 @@ async function loadUpperAtmosphere() {
     else if (shear > 10) shearTxt = "Modéré";
     document.getElementById("shearInfo").textContent =
       "Cisaillement 850→700 : " + shear.toFixed(1) + " km/h (" + shearTxt + ")";
+
+    /* ETA : masqué si pas d'activité */
+    document.getElementById("stormETA").textContent = globalScoreV2 >= 40
+      ? "Arrivée estimée (10 km) : " + eta
+      : "Arrivée estimée (10 km) : -- (pas d'activité)";
+
+    /* Vecteurs vent altitude sur la carte : seulement si score >= 40 */
+    if (layerState.cone) {
+      if (globalScoreV2 >= 40) {
+        drawTrajectory(moveDeg, avgSpeed, topoCorrection);
+      } else {
+        coneLayerGroup.clearLayers();
+      }
+    }
 
     document.getElementById("atmo-cape").textContent   = Math.round(cape) + " J/kg";
     document.getElementById("atmo-cape-i").textContent = cape>2000?"Extrême ⚠️":cape>1000?"Fort":cape>500?"Modéré":cape>200?"Faible":"Nul";
