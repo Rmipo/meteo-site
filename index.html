@@ -163,7 +163,98 @@ h2 { margin-top: 60px; font-size: 1.4em; letter-spacing: 2px; font-weight: 600; 
 .legend-item { display: flex; align-items: center; gap: 6px; }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
-/* ===== BLOCS ÉCLAIRS + NOWCAST ===== */
+/* ===== BLOC AS3935 ===== */
+.as3935-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  width: 420px;
+  margin: 20px auto 0;
+  padding: 24px;
+  position: relative;
+  text-align: left;
+  font-family: var(--mono);
+}
+
+.as3935-box::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 10%; right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #ef4444, transparent);
+  opacity: 0.6;
+}
+
+.as3935-title {
+  font-family: var(--font);
+  font-size: 1.1em;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #ef4444;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.as3935-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.as3935-item {
+  background: var(--bg-inner);
+  border-radius: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  transition: border-color 0.5s;
+}
+
+.as3935-item.alert-active {
+  border-color: #ef4444;
+  box-shadow: 0 0 10px rgba(239,68,68,0.2);
+}
+
+.as3935-item .a-name {
+  font-size: 0.62em;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+
+.as3935-item .a-val {
+  font-size: 1.5em;
+  font-weight: 700;
+  color: #ef4444;
+  transition: color 0.5s;
+}
+
+.as3935-item .a-sub {
+  font-size: 0.72em;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.as3935-alert-bar {
+  font-size: 0.85em;
+  padding: 10px 12px;
+  background: var(--bg-inner);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  text-align: center;
+  transition: all 0.5s;
+  letter-spacing: 1px;
+}
+
+.as3935-alert-bar.danger {
+  background: rgba(239,68,68,0.1);
+  border-color: #ef4444;
+  color: #ef4444;
+  font-weight: 700;
+  animation: blink 1s infinite;
+}
 .lightning-box {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px;
   width: 420px; margin: 30px auto 0; padding: 24px; position: relative;
@@ -290,6 +381,39 @@ tbody tr:last-child td { border-bottom:none; }
   <div class="update" id="status"><span class="dot-live"></span>Chargement...</div>
 </div>
 
+
+<!-- ===== BLOC AS3935 — DÉTECTION FOUDRE LOCALE ===== -->
+<div class="as3935-box" id="as3935-box">
+  <div class="as3935-title">⚡ AS3935 — Foudre locale</div>
+  <div class="as3935-grid">
+    <div class="as3935-item" id="as-dist-item">
+      <div class="a-name">Distance estimée</div>
+      <div class="a-val" id="as-dist">--</div>
+      <div class="a-sub" id="as-dist-sub">km</div>
+    </div>
+    <div class="as3935-item">
+      <div class="a-name">Éclairs détectés</div>
+      <div class="a-val" id="as-count">--</div>
+      <div class="a-sub" id="as-count-sub">depuis démarrage</div>
+    </div>
+    <div class="as3935-item">
+      <div class="a-name">Dernier éclair</div>
+      <div class="a-val" id="as-last-time">--</div>
+      <div class="a-sub">hh:mm:ss</div>
+    </div>
+    <div class="as3935-item">
+      <div class="a-name">Énergie relative</div>
+      <div class="a-val" id="as-energy">--</div>
+      <div class="a-sub">estimée</div>
+    </div>
+  </div>
+  <div class="as3935-alert-bar" id="as-alert-bar">
+    Aucune foudre détectée localement
+  </div>
+  <div style="font-size:0.7em;color:var(--muted);margin-top:8px;text-align:center;" id="as-status">
+    AS3935 — en attente de données
+  </div>
+</div>
 
 <!-- ===== BLOC ÉCLAIRS BLITZORTUNG ===== -->
 <div class="lightning-box">
@@ -1043,7 +1167,11 @@ function buildChart24h(allData) {
           }
         },
         y: {
-          ticks: { color: '#64748b', font: { family: "'Share Tech Mono'" } },
+          ticks: {
+            color: '#64748b',
+            font: { family: "'Share Tech Mono'" },
+            callback: val => typeof val === 'number' ? val.toFixed(1) + '°' : val
+          },
           grid: { color: '#1e3a5f' }
         }
       }
@@ -1052,12 +1180,15 @@ function buildChart24h(allData) {
 }
 
 /* ============================================================
-   GRAPHIQUE 7 JOURS
+   GRAPHIQUE 7 JOURS — utilise parseTS pour éviter bug timezone
    ============================================================ */
 function binBy7Days(data) {
   const days = {};
   data.forEach(d => {
-    const k = new Date(d.timestamp).toLocaleDateString("fr-FR", { weekday:"short", day:"2-digit", month:"2-digit" });
+    const tsMs = parseTS(d.timestamp);
+    if (isNaN(tsMs)) return;
+    /* Clé = date locale correcte via parseTS */
+    const k = new Date(tsMs).toLocaleDateString("fr-FR", { weekday:"short", day:"2-digit", month:"2-digit" });
     if (!days[k]) days[k] = [];
     const v = parseFloat(d.temperature);
     if (!isNaN(v)) days[k].push(v);
@@ -1066,6 +1197,7 @@ function binBy7Days(data) {
   Object.entries(days).slice(-7).forEach(([lbl, vals]) => {
     if (!vals.length) return;
     labels.push(lbl);
+    /* 1 chiffre après la virgule — le capteur BME280 n'est pas plus précis */
     mins.push(parseFloat(Math.min(...vals).toFixed(1)));
     maxs.push(parseFloat(Math.max(...vals).toFixed(1)));
     avgs.push(parseFloat((vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1)));
@@ -1137,20 +1269,12 @@ async function loadData() {
      * Pour avoir toute la journée, il faut modifier Apps Script (voir instructions).
      * En attendant, on affiche ce qu'on a.
      */
-    buildChart24h(data);
+    /* Mise à jour AS3935 si colonnes présentes dans les données */
+    if (data.length && data[0].lightning_dist !== undefined) {
+      updateAS3935(data);
+    }
 
-    /* Graphique 7 jours — utilise aussi tout data */
-    const { labels: l7, mins, avgs, maxs } = binBy7Days(data);
-    if (chart7j) chart7j.destroy();
-    chart7j = new Chart(document.getElementById("chart7j"), {
-      type: "line",
-      data: { labels: l7, datasets: [
-        { label:"Minimum (°C)",  data:mins, borderColor:"#38bdf8", borderWidth:2, tension:0.3, pointRadius:4, fill:false },
-        { label:"Moyenne (°C)",  data:avgs, borderColor:"#facc15", borderWidth:2.5, tension:0.3, pointRadius:5, pointBackgroundColor:"#facc15", fill:false },
-        { label:"Maximum (°C)", data:maxs, borderColor:"#f97316", borderWidth:2, tension:0.3, pointRadius:4, fill:false }
-      ]},
-      options: darkOpts
-    });
+    buildChart24h(data);
 
     /* Tableau historique — 50 dernières mesures */
     const tbody = document.getElementById("tableBody");
@@ -1165,10 +1289,40 @@ async function loadData() {
       </tr>`;
     });
 
+    /* Graphique 7 jours — appel séparé avec ?days=7
+     * Apps Script doit supporter ce paramètre (voir instructions).
+     * Fallback sur data principal si non supporté. */
+    fetch(SHEETS_URL + "?days=7")
+      .then(r => r.json())
+      .then(raw7 => {
+        const d7 = Array.isArray(raw7) ? raw7 : [raw7];
+        /* Si ?days=7 retourne plus de données que l'appel principal → c'est supporté */
+        buildChart7j(d7.length > data.length ? d7 : data);
+      })
+      .catch(() => buildChart7j(data));
+
   } catch(err) {
     console.error("Erreur loadData:", err);
     document.getElementById("status").textContent = "Erreur chargement.";
   }
+}
+
+function buildChart7j(data) {
+  const { labels: l7, mins, avgs, maxs } = binBy7Days(data);
+  if (chart7j) chart7j.destroy();
+  const optsY = {
+    ticks: { color:'#64748b', font:{ family:"'Share Tech Mono'" }, callback: v => typeof v==='number' ? v.toFixed(1)+'°' : v },
+    grid: { color:'#1e3a5f' }
+  };
+  chart7j = new Chart(document.getElementById("chart7j"), {
+    type: "line",
+    data: { labels: l7, datasets: [
+      { label:"Minimum (°C)",  data:mins, borderColor:"#38bdf8", borderWidth:2, tension:0.3, pointRadius:4, fill:false },
+      { label:"Moyenne (°C)",  data:avgs, borderColor:"#facc15", borderWidth:2.5, tension:0.3, pointRadius:5, pointBackgroundColor:"#facc15", fill:false },
+      { label:"Maximum (°C)", data:maxs, borderColor:"#f97316", borderWidth:2, tension:0.3, pointRadius:4, fill:false }
+    ]},
+    options: { ...darkOpts, scales: { ...darkOpts.scales, y: optsY } }
+  });
 }
 
 /* ============================================================
@@ -1430,8 +1584,85 @@ async function loadUpperAtmosphere() {
 }
 
 /* ============================================================
-   ÉCLAIRS BLITZORTUNG
+   AS3935 — Lecture données foudre locale depuis Google Sheets
+   Les colonnes attendues dans le Sheets :
+   Col A: timestamp | B: temperature | C: humidity | D: pressure
+   Col E: lightning_dist (km, -1 si aucun) | F: lightning_count | G: lightning_energy
    ============================================================ */
+let as3935LastCount = 0;
+let as3935LastTs    = 0;
+
+function updateAS3935(data) {
+  /* Chercher la dernière ligne avec un éclair détecté (lightning_dist > 0) */
+  const withStrike = data
+    .filter(d => d.lightning_dist !== undefined && parseFloat(d.lightning_dist) > 0)
+    .slice(-1)[0];
+
+  const lastRow = data[data.length - 1];
+  const totalCount = lastRow && lastRow.lightning_count !== undefined
+    ? parseInt(lastRow.lightning_count) || 0
+    : 0;
+
+  document.getElementById("as-count").textContent = totalCount || "--";
+
+  if (!withStrike) {
+    document.getElementById("as-dist").textContent     = "--";
+    document.getElementById("as-dist-sub").textContent = "Aucun détecté";
+    document.getElementById("as-last-time").textContent = "--";
+    document.getElementById("as-energy").textContent    = "--";
+    document.getElementById("as-alert-bar").textContent = "Aucune foudre détectée localement";
+    document.getElementById("as-alert-bar").className   = "as3935-alert-bar";
+    document.getElementById("as-dist-item").className   = "as3935-item";
+    document.getElementById("as-status").textContent    =
+      "AS3935 actif — dernière lecture : " + new Date(parseTS(lastRow?.timestamp)).toLocaleTimeString("fr-FR");
+    return;
+  }
+
+  const dist    = parseFloat(withStrike.lightning_dist);
+  const energy  = parseFloat(withStrike.lightning_energy) || 0;
+  const strikTs = parseTS(withStrike.timestamp);
+  const minsAgo = Math.round((Date.now() - strikTs) / 60000);
+
+  document.getElementById("as-dist").textContent     = dist.toFixed(0);
+  document.getElementById("as-dist-sub").textContent = "km — il y a " + minsAgo + " min";
+  document.getElementById("as-last-time").textContent =
+    new Date(strikTs).toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit", second:"2-digit" });
+
+  /* Énergie normalisée sur 1 à 5 barres */
+  const energyBars = Math.min(5, Math.max(1, Math.round(energy / 100000)));
+  document.getElementById("as-energy").textContent = "█".repeat(energyBars) + "░".repeat(5 - energyBars);
+
+  /* Alerte selon distance */
+  const alertEl = document.getElementById("as-alert-bar");
+  const distItem = document.getElementById("as-dist-item");
+  if (dist <= 5) {
+    alertEl.textContent = "🚨 FOUDRE TRÈS PROCHE — " + dist + " km !";
+    alertEl.className   = "as3935-alert-bar danger";
+    distItem.className  = "as3935-item alert-active";
+  } else if (dist <= 15) {
+    alertEl.textContent = "⚡ Foudre proche — " + dist + " km";
+    alertEl.className   = "as3935-alert-bar";
+    alertEl.style.color = "#f97316";
+    alertEl.style.borderColor = "#f97316";
+    distItem.className  = "as3935-item";
+  } else if (dist <= 40) {
+    alertEl.textContent = "⚡ Activité électrique détectée — " + dist + " km";
+    alertEl.className   = "as3935-alert-bar";
+    alertEl.style.color = "#eab308";
+    alertEl.style.borderColor = "#eab308";
+    distItem.className  = "as3935-item";
+  } else {
+    alertEl.textContent = "Orage lointain détecté — " + dist + " km";
+    alertEl.className   = "as3935-alert-bar";
+    alertEl.style.color = "";
+    alertEl.style.borderColor = "";
+    distItem.className  = "as3935-item";
+  }
+
+  document.getElementById("as-status").textContent =
+    "AS3935 actif — " + totalCount + " impact(s) depuis démarrage";
+}
+
 async function loadLightning() {
   if (!BLITZORTUNG_PROXY_URL) {
     document.getElementById("lgt-status").textContent  = "⚠️ Proxy non configuré — voir instructions";
