@@ -1035,33 +1035,29 @@ function toggleLayer(name) {
 
 /* ============================================================
    PARSING TIMESTAMP — robuste pour tous formats Google Sheets
-   Le problème observé : Google Apps Script sérialise new Date()
-   en UTC ISO "2026-04-12T16:13:37.000Z" mais l'heure réelle est
-   18h13 (UTC+2 en avril). On doit convertir en ms local correct.
    ============================================================ */
 function parseTS(raw) {
   if (!raw) return NaN;
   if (typeof raw === 'number') return raw;
-  let s = String(raw).trim();
+  const s = String(raw).trim();
 
-  /* Format Apps Script objet : "Date(2026,3,12,18,13,37)" — déjà local */
+  /* Chaîne vide ou en-tête textuel */
+  if (!s || s === 'timestamp' || s === 'Date') return NaN;
+
+  /* Format Apps Script sérialisé : "Date(2026,3,12,18,13,37)" — heure locale */
   const gMatch = s.match(/^Date\((\d+),(\d+),(\d+),(\d+),(\d+),(\d+)\)$/);
   if (gMatch) {
     const [,y,mo,d,h,mi,sec] = gMatch.map(Number);
     return new Date(y, mo, d, h, mi, sec).getTime();
   }
 
-  /* Normaliser les séparateurs */
-  s = s.replace(/\//g, '-').replace(' ', 'T');
-
-  /*
-   * new Date("2026-04-13T13:47:00.000Z") retourne le bon epoch UTC.
-   * Quand on appelle ensuite new Date(ms).getHours() dans le navigateur,
-   * JS convertit automatiquement en heure locale (UTC+2 en France = 15h47).
-   * Donc on retourne simplement l'epoch brut — pas besoin de correction manuelle.
-   * Le bug précédent ajoutait +2h en trop.
+  /* Tous les autres formats (ISO UTC, ISO local, slash-séparé) :
+   * new Date() les gère nativement.
+   * Pour ISO UTC (finit en Z) → epoch UTC → JS convertit en local automatiquement.
+   * Pour ISO local (sans Z) → JS interprète en local → correct aussi.
    */
-  return new Date(s).getTime();
+  const ms = new Date(s.replace(/\//g, '-').replace(' ', 'T')).getTime();
+  return isNaN(ms) ? NaN : ms;
 }
 
 /* ============================================================
@@ -1218,7 +1214,9 @@ async function loadData() {
     /* === APPEL UNIQUE — on récupère tout ce que retourne Apps Script === */
     const res  = await fetch(SHEETS_URL);
     const raw  = await res.json();
-    const data = Array.isArray(raw) ? raw : [raw];
+    const rawData = Array.isArray(raw) ? raw : [raw];
+    /* Filtrer les lignes sans timestamp valide (en-tête, lignes vides) */
+    const data = rawData.filter(d => d && !isNaN(parseTS(d.timestamp)));
 
     if (data.length < 3) {
       document.getElementById("status").textContent = "Données insuffisantes.";
