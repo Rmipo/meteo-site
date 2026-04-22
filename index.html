@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -317,7 +316,6 @@ tbody tr:last-child td { border-bottom:none; }
 .leaflet-control-attribution { background: rgba(2,6,23,0.8) !important; color:#64748b !important; }
 .leaflet-control-attribution a { color:#38bdf8 !important; }
 </style>
-
 </head>
 <body>
 
@@ -326,7 +324,6 @@ tbody tr:last-child td { border-bottom:none; }
 </h1>
 
 <!-- ===== BOX PRINCIPALE ===== -->
-
 <div class="meteo-box">
   <div class="mesures-grid">
     <div class="mesure-col">
@@ -384,8 +381,8 @@ tbody tr:last-child td { border-bottom:none; }
   <div class="update" id="status"><span class="dot-live"></span>Chargement...</div>
 </div>
 
-<!-- ===== BLOC AS3935 — DÉTECTION FOUDRE LOCALE ===== -->
 
+<!-- ===== BLOC AS3935 — DÉTECTION FOUDRE LOCALE ===== -->
 <div class="as3935-box" id="as3935-box">
   <div class="as3935-title">⚡ AS3935 — Foudre locale</div>
   <div class="as3935-grid">
@@ -419,7 +416,6 @@ tbody tr:last-child td { border-bottom:none; }
 </div>
 
 <!-- ===== BLOC ÉCLAIRS BLITZORTUNG ===== -->
-
 <div class="lightning-box">
   <div class="lightning-title">⚡ Activité électrique — 100 km</div>
   <div class="lightning-grid">
@@ -432,8 +428,8 @@ tbody tr:last-child td { border-bottom:none; }
   <div style="font-size:0.72em; color:var(--muted); margin-top:6px;" id="lgt-status">Source : Blitzortung.org — actualisation 60 s</div>
 </div>
 
-<!-- ===== BLOC NOWCAST RAINVIEWER ===== -->
 
+<!-- ===== BLOC NOWCAST RAINVIEWER ===== -->
 <div class="nowcast-box">
   <div class="nowcast-title">📡 Nowcast radar — prévision +30 min</div>
   <div class="nowcast-frames">
@@ -445,16 +441,16 @@ tbody tr:last-child td { border-bottom:none; }
   <div class="nowcast-status" id="nowcast-status">Chargement des données radar RainViewer...</div>
 </div>
 
-<!-- ===== GRAPHIQUE ORAGE (conditionnel) ===== -->
 
+<!-- ===== GRAPHIQUE ORAGE (conditionnel) ===== -->
 <div id="stormSection">
   <h2>⚡ Suivi orage en cours — dernière heure</h2>
   <p style="font-family:var(--mono); font-size:0.8em; color:var(--muted); margin-bottom:15px;">Température · Humidité · Pression — résolution 1 min</p>
   <canvas id="stormCanvas"></canvas>
 </div>
 
-<!-- ===== CARTE TRAJECTOIRE ORAGES ===== -->
 
+<!-- ===== CARTE TRAJECTOIRE ORAGES ===== -->
 <h2>🗺️ Carte trajectoire — 100 km</h2>
 <div class="map-section">
   <div class="map-header">
@@ -479,30 +475,31 @@ tbody tr:last-child td { border-bottom:none; }
   </div>
 </div>
 
-<!-- ===== GRAPHIQUE JOUR (96 bins fixes 00h00→23h45) ===== -->
 
+<!-- ===== GRAPHIQUE JOUR (96 bins fixes 00h00→23h45) ===== -->
 <h2 id="chart24h-title">📈 Température — aujourd'hui (moyenne 15 min)</h2>
 <div class="chart-wrap"><canvas id="chart24h"></canvas></div>
 
-<!-- ===== GRAPHIQUE 7 JOURS ===== -->
 
+<!-- ===== GRAPHIQUE 7 JOURS ===== -->
 <h2>📊 Température — 7 derniers jours (min / moy / max)</h2>
 <div class="chart-wrap"><canvas id="chart7j"></canvas></div>
 
-<!-- ===== RADAR RAINVIEWER ===== -->
 
+<!-- ===== RADAR RAINVIEWER ===== -->
 <h2>📡 Radar pluie temps réel</h2>
 <div class="radar-wrap">
   <iframe src="https://www.rainviewer.com/map.html?loc=46.42964,1.83906,8&oFa=1&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=3&o=83&lm=1&layer=radar&sm=1&sn=1" title="Radar pluie RainViewer"></iframe>
 </div>
 
-<!-- ===== HISTORIQUE ===== -->
 
+<!-- ===== HISTORIQUE ===== -->
 <h2>📋 Historique</h2>
 <table>
   <thead><tr><th>Date et heure</th><th>Température (°C)</th><th>Humidité (%)</th><th>Pression (hPa)</th></tr></thead>
   <tbody id="tableBody"></tbody>
 </table>
+
 
 <script>
 /* ============================================================
@@ -1037,29 +1034,49 @@ function toggleLayer(name) {
 }
 
 /* ============================================================
-   PARSING TIMESTAMP — robuste pour tous formats Google Sheets
+   PARSING TIMESTAMP — version finale robuste
+   Gère tous les formats possibles retournés par Apps Script :
+   1. "2026-04-17T14:23:00.000Z"  (ISO UTC — nouveau Apps Script)
+   2. "2026/04/17 14:23:00"       (ancien Apps Script format slash)
+   3. "2026-04-17 14:23:00"       (ancien Apps Script format tiret)
+   4. Date(2026,3,17,14,23,0)     (format objet Apps Script sérialisé)
+   5. 1713362580000               (epoch ms direct)
    ============================================================ */
 function parseTS(raw) {
   if (!raw) return NaN;
+
+  /* Nombre direct (epoch ms) */
   if (typeof raw === 'number') return raw;
+
   const s = String(raw).trim();
 
-  /* Chaîne vide ou en-tête textuel */
-  if (!s || s === 'timestamp' || s === 'Date') return NaN;
+  /* Vide ou en-tête */
+  if (!s || s === 'timestamp' || s === 'Date' || s === 'undefined') return NaN;
 
-  /* Format Apps Script sérialisé : "Date(2026,3,12,18,13,37)" — heure locale */
-  const gMatch = s.match(/^Date\((\d+),(\d+),(\d+),(\d+),(\d+),(\d+)\)$/);
-  if (gMatch) {
-    const [,y,mo,d,h,mi,sec] = gMatch.map(Number);
-    return new Date(y, mo, d, h, mi, sec).getTime();
+  /* Format Apps Script objet : Date(2026,3,17,14,23,0) — ATTENTION mois 0-indexé */
+  const gm = s.match(/^Date\((\d+),(\d+),(\d+),(\d+),(\d+),(\d+)\)$/);
+  if (gm) {
+    return new Date(+gm[1], +gm[2], +gm[3], +gm[4], +gm[5], +gm[6]).getTime();
   }
 
-  /* Tous les autres formats (ISO UTC, ISO local, slash-séparé) :
-   * new Date() les gère nativement.
-   * Pour ISO UTC (finit en Z) → epoch UTC → JS convertit en local automatiquement.
-   * Pour ISO local (sans Z) → JS interprète en local → correct aussi.
-   */
-  const ms = new Date(s.replace(/\//g, '-').replace(' ', 'T')).getTime();
+  /* ISO standard avec Z → UTC → JS convertit en local automatiquement */
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(s)) {
+    const ms = Date.parse(s);
+    return isNaN(ms) ? NaN : ms;
+  }
+
+  /* Format slash ou espace : "2026/04/17 14:23:00" ou "2026-04-17 14:23:00" */
+  /* On reconstruit manuellement pour éviter les bugs Safari */
+  const dm = s.replace(/\//g, '-').match(
+    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/
+  );
+  if (dm) {
+    /* Sans timezone → heure locale */
+    return new Date(+dm[1], +dm[2]-1, +dm[3], +dm[4], +dm[5], +dm[6]).getTime();
+  }
+
+  /* Dernier recours */
+  const ms = Date.parse(s);
   return isNaN(ms) ? NaN : ms;
 }
 
@@ -1807,6 +1824,5 @@ setInterval(loadUpperAtmosphere, 300000);
 setInterval(loadLightning, 60000);
 setInterval(loadNowcast, 300000);
 </script>
-
 </body>
 </html>
