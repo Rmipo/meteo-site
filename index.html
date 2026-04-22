@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -316,6 +317,7 @@ tbody tr:last-child td { border-bottom:none; }
 .leaflet-control-attribution { background: rgba(2,6,23,0.8) !important; color:#64748b !important; }
 .leaflet-control-attribution a { color:#38bdf8 !important; }
 </style>
+
 </head>
 <body>
 
@@ -324,6 +326,7 @@ tbody tr:last-child td { border-bottom:none; }
 </h1>
 
 <!-- ===== BOX PRINCIPALE ===== -->
+
 <div class="meteo-box">
   <div class="mesures-grid">
     <div class="mesure-col">
@@ -381,8 +384,8 @@ tbody tr:last-child td { border-bottom:none; }
   <div class="update" id="status"><span class="dot-live"></span>Chargement...</div>
 </div>
 
-
 <!-- ===== BLOC AS3935 — DÉTECTION FOUDRE LOCALE ===== -->
+
 <div class="as3935-box" id="as3935-box">
   <div class="as3935-title">⚡ AS3935 — Foudre locale</div>
   <div class="as3935-grid">
@@ -416,6 +419,7 @@ tbody tr:last-child td { border-bottom:none; }
 </div>
 
 <!-- ===== BLOC ÉCLAIRS BLITZORTUNG ===== -->
+
 <div class="lightning-box">
   <div class="lightning-title">⚡ Activité électrique — 100 km</div>
   <div class="lightning-grid">
@@ -428,8 +432,8 @@ tbody tr:last-child td { border-bottom:none; }
   <div style="font-size:0.72em; color:var(--muted); margin-top:6px;" id="lgt-status">Source : Blitzortung.org — actualisation 60 s</div>
 </div>
 
-
 <!-- ===== BLOC NOWCAST RAINVIEWER ===== -->
+
 <div class="nowcast-box">
   <div class="nowcast-title">📡 Nowcast radar — prévision +30 min</div>
   <div class="nowcast-frames">
@@ -441,16 +445,16 @@ tbody tr:last-child td { border-bottom:none; }
   <div class="nowcast-status" id="nowcast-status">Chargement des données radar RainViewer...</div>
 </div>
 
-
 <!-- ===== GRAPHIQUE ORAGE (conditionnel) ===== -->
+
 <div id="stormSection">
   <h2>⚡ Suivi orage en cours — dernière heure</h2>
   <p style="font-family:var(--mono); font-size:0.8em; color:var(--muted); margin-bottom:15px;">Température · Humidité · Pression — résolution 1 min</p>
   <canvas id="stormCanvas"></canvas>
 </div>
 
-
 <!-- ===== CARTE TRAJECTOIRE ORAGES ===== -->
+
 <h2>🗺️ Carte trajectoire — 100 km</h2>
 <div class="map-section">
   <div class="map-header">
@@ -475,31 +479,30 @@ tbody tr:last-child td { border-bottom:none; }
   </div>
 </div>
 
-
 <!-- ===== GRAPHIQUE JOUR (96 bins fixes 00h00→23h45) ===== -->
+
 <h2 id="chart24h-title">📈 Température — aujourd'hui (moyenne 15 min)</h2>
 <div class="chart-wrap"><canvas id="chart24h"></canvas></div>
 
-
 <!-- ===== GRAPHIQUE 7 JOURS ===== -->
+
 <h2>📊 Température — 7 derniers jours (min / moy / max)</h2>
 <div class="chart-wrap"><canvas id="chart7j"></canvas></div>
 
-
 <!-- ===== RADAR RAINVIEWER ===== -->
+
 <h2>📡 Radar pluie temps réel</h2>
 <div class="radar-wrap">
   <iframe src="https://www.rainviewer.com/map.html?loc=46.42964,1.83906,8&oFa=1&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=3&o=83&lm=1&layer=radar&sm=1&sn=1" title="Radar pluie RainViewer"></iframe>
 </div>
 
-
 <!-- ===== HISTORIQUE ===== -->
+
 <h2>📋 Historique</h2>
 <table>
   <thead><tr><th>Date et heure</th><th>Température (°C)</th><th>Humidité (%)</th><th>Pression (hPa)</th></tr></thead>
   <tbody id="tableBody"></tbody>
 </table>
-
 
 <script>
 /* ============================================================
@@ -1215,8 +1218,28 @@ async function loadData() {
     const res  = await fetch(SHEETS_URL);
     const raw  = await res.json();
     const rawData = Array.isArray(raw) ? raw : [raw];
-    /* Filtrer les lignes sans timestamp valide (en-tête, lignes vides) */
-    const data = rawData.filter(d => d && !isNaN(parseTS(d.timestamp)));
+
+    /* Debug : afficher le premier timestamp brut reçu */
+    if (rawData.length > 0) {
+      console.log('[loadData] Ex. timestamp brut:', JSON.stringify(rawData[0].timestamp),
+                  '→ parseTS:', parseTS(rawData[0].timestamp),
+                  '→ date:', new Date(parseTS(rawData[0].timestamp)).toLocaleString('fr-FR'));
+      console.log('[loadData] Nb lignes reçues:', rawData.length);
+    }
+
+    /*
+     * Filtrage souple : on garde toutes les lignes qui ont au moins
+     * un timestamp non vide ET une température valide.
+     * On ne filtre PAS sur parseTS pour ne pas perdre de données
+     * si le format timestamp est inhabituel.
+     */
+    const data = rawData.filter(d =>
+      d &&
+      d.timestamp !== undefined &&
+      d.timestamp !== "" &&
+      d.timestamp !== "timestamp" &&  /* exclure la ligne d'en-tête */
+      !isNaN(parseFloat(d.temperature))
+    );
 
     if (data.length < 3) {
       document.getElementById("status").textContent = "Données insuffisantes.";
@@ -1784,5 +1807,6 @@ setInterval(loadUpperAtmosphere, 300000);
 setInterval(loadLightning, 60000);
 setInterval(loadNowcast, 300000);
 </script>
+
 </body>
 </html>
