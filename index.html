@@ -601,6 +601,8 @@ let surfaceData    = { last: null, prev: null, surfaceScore: 0, stormData: [], a
 let chart24h, chart7j, chartStorm;
 let lightningHistory = [];
 
+/* Centroid du foyer Blitzortung — mis à jour dans loadLightning */
+let strikeCentroid = { lat: LAT, lon: LON, hasStrikes: false };
 /* Vecteur vent cellule — partagé entre loadUpperAtmosphere et la carte */
 let cellVector = { speed: 0, moveDeg: 0 };
 
@@ -699,15 +701,20 @@ async function updateRadarLayer() {
      * On n'utilise PAS tileSize:512 + zoomOffset:1 qui cause des problèmes
      * sur certaines versions de Leaflet. 256px standard fonctionne partout.
      */
-    const tileUrl = `https://tilecache.rainviewer.com${latest.path}/256/{z}/{x}/{y}/2/1_1.png`;
+    const tileUrl = `https://tilecache.rainviewer.com${latest.path}/512/{z}/{x}/{y}/2/1_1.png`;
 
     if (radarLayer) map.removeLayer(radarLayer);
 
     radarLayer = L.tileLayer(tileUrl, {
       opacity: 0.6,
       attribution: '© RainViewer',
+      tileSize: 512,
+      zoomOffset: -1,   /* tiles 512px : décaler d'un niveau pour correspondre aux tuiles 256px standard */
+      minNativeZoom: 1, /* RainViewer supporte nativement les zooms 1-12 */
+      maxNativeZoom: 12,
       minZoom: 1,
-      maxZoom: 12
+      maxZoom: 18,      /* Leaflet peut zoomer au-delà en interpolant — plus de message d'erreur */
+      errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' /* pixel transparent si tile manquante */
     });
 
     if (layerState.radar) radarLayer.addTo(map);
@@ -718,99 +725,116 @@ async function updateRadarLayer() {
   } catch(e) { console.warn("Radar map:", e); }
 }
 
-/* Dessine deux vecteurs parallèles (bords de la cellule) avec flèches */
-function drawTrajectory(moveDeg, speedKmh, topoCorrection) {
+/*
+ * Dessine les vecteurs de trajectoire depuis le centroid des éclairs Blitzortung.
+ * originLat/originLon = centre du foyer détecté (calculé dans loadLightning).
+ * Si pas de foyer connu, utilise la position de la station comme fallback.
+ * moveDeg = direction de déplacement (vers où va l'orage)
+ * speedKmh = vitesse estimée
+ * topoCorrection = correction en degrés selon le relief
+ */
+function drawTrajectory(originLat, originLon, moveDeg, speedKmh, topoCorrection) {
   coneLayerGroup.clearLayers();
 
   if (speedKmh < 3) return;
 
-  /*
-   * La direction affichée est moveDeg + correction topographique.
-   * topoCorrection est un angle en degrés (positif = déviation horaire).
-   * Calcul : si le terrain descend vers l'Ouest, les cellules venant du SO
-   * accélèrent légèrement et dévient vers le NE → correction positive.
-   */
   const correctedDeg = (moveDeg + (topoCorrection || 0) + 360) % 360;
+  const halfWidth    = 20; /* km — demi-largeur de la cellule */
 
-  /* Largeur de la cellule estimée : 25 km de part et d'autre de l'axe */
-  const halfWidth = 25; /* km */
+  /* Distances projetées selon la vitesse */
+  const d30 = speedKmh * 0.5;  /* +30 min */
+  const d60 = speedKmh * 1.0;  /* +60 min */
+  const d90 = speedKmh * 1.5;  /* +90 min */
 
-  /* Durées projetées */
-  const d60 = speedKmh * 1.0;
-  const d90 = speedKmh * 1.5;
-
-  /* Direction perpendiculaire (pour décaler les deux vecteurs latéralement) */
+  /* Directions perpendiculaires pour les deux vecteurs latéraux */
   const perpLeft  = (correctedDeg - 90 + 360) % 360;
   const perpRight = (correctedDeg + 90) % 360;
 
-  /* Origines des deux vecteurs (décalés latéralement de halfWidth km) */
-  const originLeft  = destinationPoint(LAT, LON, halfWidth, perpLeft);
-  const originRight = destinationPoint(LAT, LON, halfWidth, perpRight);
+  /* Origines des vecteurs — décalées de halfWidth depuis le centroid */
+  const oL = destinationPoint(originLat, originLon, halfWidth, perpLeft);
+  const oR = destinationPoint(originLat, originLon, halfWidth, perpRight);
 
-  /* Extrémités à +60 et +90 min */
-  const endLeft60  = destinationPoint(originLeft[0],  originLeft[1],  d60, correctedDeg);
-  const endRight60 = destinationPoint(originRight[0], originRight[1], d60, correctedDeg);
-  const endLeft90  = destinationPoint(originLeft[0],  originLeft[1],  d90, correctedDeg);
-  const endRight90 = destinationPoint(originRight[0], originRight[1], d90, correctedDeg);
+  /* Points de destination à +30, +60, +90 min */
+  const eL30 = destinationPoint(oL[0], oL[1], d30, correctedDeg);
+  const eR30 = destinationPoint(oR[0], oR[1], d30, correctedDeg);
+  const eL60 = destinationPoint(oL[0], oL[1], d60, correctedDeg);
+  const eR60 = destinationPoint(oR[0], oR[1], d60, correctedDeg);
+  const eL90 = destinationPoint(oL[0], oL[1], d90, correctedDeg);
+  const eR90 = destinationPoint(oR[0], oR[1], d90, correctedDeg);
 
-  /* Ligne centrale (axe) en pointillés fins */
-  const center60 = destinationPoint(LAT, LON, d60, correctedDeg);
-  const center90 = destinationPoint(LAT, LON, d90, correctedDeg);
+  /* Axe central depuis le centroid */
+  const c30 = destinationPoint(originLat, originLon, d30, correctedDeg);
+  const c60 = destinationPoint(originLat, originLon, d60, correctedDeg);
+  const c90 = destinationPoint(originLat, originLon, d90, correctedDeg);
 
-  L.polyline([[LAT, LON], center90], {
-    color: '#f97316', weight: 1, opacity: 0.35, dashArray: '4 6'
-  }).addTo(coneLayerGroup);
+  /* Marqueur du centroid (point d'origine) */
+  L.circleMarker([originLat, originLon], {
+    radius: 8, color: '#f97316', fillColor: '#f97316',
+    fillOpacity: 0.3, weight: 2
+  }).addTo(coneLayerGroup)
+    .bindTooltip('Centroid foyer', { permanent: false });
 
   /* Zone ombragée entre les deux vecteurs */
-  L.polygon([originLeft, endLeft90, endRight90, originRight], {
-    color: 'transparent',
-    fillColor: '#f97316',
-    fillOpacity: 0.08,
-    weight: 0
+  L.polygon([oL, eL90, eR90, oR], {
+    color: 'transparent', fillColor: '#f97316', fillOpacity: 0.08, weight: 0
   }).addTo(coneLayerGroup);
 
-  /* Les deux vecteurs principaux */
-  [
-    { origin: originLeft,  end60: endLeft60,  end90: endLeft90  },
-    { origin: originRight, end60: endRight60, end90: endRight90 }
-  ].forEach(({ origin, end60, end90 }) => {
+  /* Axe central pointillé */
+  L.polyline([[originLat, originLon], c90], {
+    color: '#f97316', weight: 1, opacity: 0.4, dashArray: '4 6'
+  }).addTo(coneLayerGroup);
 
-    /* Ligne principale */
-    L.polyline([origin, end90], {
-      color: '#f97316', weight: 2.5, opacity: 0.9
+  /* Ligne vers ma station si le foyer pointe dans sa direction (±60°) */
+  const bearingToStation = (() => {
+    const dLat = LAT - originLat;
+    const dLon = (LON - originLon) * Math.cos(degToRad(originLat));
+    return ((radToDeg(Math.atan2(dLon, dLat)) + 360) % 360);
+  })();
+  const angleDiff = Math.abs(((correctedDeg - bearingToStation + 540) % 360) - 180);
+  const distToStation = haversine(originLat, originLon, LAT, LON);
+
+  if (angleDiff < 60) {
+    const etaMin = speedKmh > 3 ? Math.round((distToStation / speedKmh) * 60) : null;
+    L.polyline([[originLat, originLon], [LAT, LON]], {
+      color: '#ef4444', weight: 1.5, opacity: 0.7, dashArray: '8 5'
     }).addTo(coneLayerGroup);
+
+    if (etaMin !== null) {
+      const midLat = (originLat + LAT) / 2;
+      const midLon = (originLon + LON) / 2;
+      L.marker([midLat, midLon], {
+        icon: L.divIcon({
+          html: `<div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:#ef4444;background:rgba(2,6,23,0.9);padding:3px 7px;border-radius:4px;border:1px solid #ef4444;white-space:nowrap;">ETA ~${etaMin} min</div>`,
+          className: '', iconAnchor: [35, 8]
+        })
+      }).addTo(coneLayerGroup);
+    }
+  }
+
+  /* Les deux vecteurs latéraux */
+  [[oL, eL30, eL60, eL90], [oR, eR30, eR60, eR90]].forEach(([orig, p30, p60, p90]) => {
+    L.polyline([orig, p90], { color: '#f97316', weight: 2.5, opacity: 0.9 }).addTo(coneLayerGroup);
 
     /* Flèche à la pointe */
-    const arrowIcon = L.divIcon({
-      html: `<div style="
-        font-size:16px;
-        transform: rotate(${correctedDeg}deg);
-        line-height:1;
-        color:#f97316;
-        filter: drop-shadow(0 0 3px #f97316);
-      ">▲</div>`,
-      className: '',
-      iconSize: [16,16],
-      iconAnchor: [8,8]
-    });
-    L.marker(end90, { icon: arrowIcon }).addTo(coneLayerGroup);
-
-    /* Tiret à +60 min sur chaque vecteur */
-    L.circleMarker(end60, {
-      radius: 3, color: '#f97316', fillColor: '#f97316', fillOpacity: 1, weight: 0
+    L.marker(p90, {
+      icon: L.divIcon({
+        html: `<div style="font-size:14px;transform:rotate(${correctedDeg}deg);color:#f97316;line-height:1;filter:drop-shadow(0 0 3px #f97316);">▲</div>`,
+        className: '', iconSize: [14,14], iconAnchor: [7,7]
+      })
     }).addTo(coneLayerGroup);
+
+    /* Points à +30 et +60 min */
+    [p30, p60].forEach(pt => L.circleMarker(pt, {
+      radius: 2, color: '#f97316', fillColor: '#f97316', fillOpacity: 0.7, weight: 0
+    }).addTo(coneLayerGroup));
   });
 
-  /* Labels +60 et +90 min sur l'axe central — simples et lisibles */
-  [
-    { pt: center60, label: '+60 min' },
-    { pt: center90, label: '+90 min' }
-  ].forEach(({ pt, label }) => {
+  /* Labels temporels sur l'axe central */
+  [[c30, '+30 min'], [c60, '+60 min'], [c90, '+90 min']].forEach(([pt, label]) => {
     L.marker(pt, {
       icon: L.divIcon({
-        html: `<div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:#f97316;background:rgba(2,6,23,0.85);padding:2px 6px;border-radius:4px;border:1px solid rgba(249,115,22,0.5);white-space:nowrap;">${label}</div>`,
-        className: '',
-        iconAnchor: [22, 6]
+        html: `<div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:#f97316;background:rgba(2,6,23,0.85);padding:2px 6px;border-radius:4px;border:1px solid rgba(249,115,22,0.4);white-space:nowrap;">${label}</div>`,
+        className: '', iconAnchor: [22, 6]
       })
     }).addTo(coneLayerGroup);
   });
@@ -1147,7 +1171,7 @@ function buildChart24h(allData) {
         pointRadius: ctx => values[ctx.dataIndex] !== null ? 2 : 0,
         pointBackgroundColor: '#38bdf8',
         fill: true,
-        spanGaps: false
+        spanGaps: true   /* relie les points même si bins intermédiaires sont null */
       }]
     },
     options: {
@@ -1578,10 +1602,12 @@ async function loadUpperAtmosphere() {
       if (i <= activity.level) dot.classList.add("on-"+i);
     }
 
-    /* ---- Vecteurs vent altitude sur la carte : seulement si score >= 40 ---- */
+    /* ---- Vecteurs trajectoire depuis centroid Blitzortung (ou station si pas d'éclairs) ---- */
     if (layerState.cone) {
       if (globalScoreV2 >= 40) {
-        drawTrajectory(moveDeg, avgSpeed, topoCorrection);
+        const oLat = strikeCentroid.hasStrikes ? strikeCentroid.lat : LAT;
+        const oLon = strikeCentroid.hasStrikes ? strikeCentroid.lon : LON;
+        drawTrajectory(oLat, oLon, moveDeg, avgSpeed, topoCorrection);
       } else {
         coneLayerGroup.clearLayers();
       }
@@ -1765,6 +1791,19 @@ async function loadLightning() {
 
     /* Mise à jour impacts sur la carte */
     if (layerState.strikes) updateStrikesOnMap(lightningHistory);
+
+    /* Calcul du centroid des éclairs récents (30 dernières minutes) pour la trajectoire */
+    const recent30 = lightningHistory.filter(s => Date.now() - s.ts < 30 * 60 * 1000);
+    if (recent30.length >= 3) {
+      strikeCentroid = {
+        lat: recent30.reduce((a, b) => a + b.lat, 0) / recent30.length,
+        lon: recent30.reduce((a, b) => a + b.lon, 0) / recent30.length,
+        hasStrikes: true
+      };
+    } else {
+      strikeCentroid = { lat: LAT, lon: LON, hasStrikes: false };
+    }
+
     /* Détection et dessin des foyers orageux */
     detectAndDrawFoci();
 
