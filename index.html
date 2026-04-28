@@ -582,16 +582,177 @@ const darkOpts = {
 };
 
 /* ============================================================
-   ANALYSE ORAGEUSE niveaux 1–5
+   ÉTAT PARTAGÉ DU NOWCASTING
+   Mis à jour par loadNowcast() et loadLightning()
+   ============================================================ */
+let nowcastState = {
+  /* RainViewer nowcast */
+  stationUnderRain15min: false,  /* station sous pluie extrapolée dans 15 min */
+  radarReflNow:          0,      /* réflectivité estimée maintenant (0-100) */
+
+  /* Blitzortung lightning tracking */
+  lightningJump:         false,  /* doublement du taux d'éclairs en 5 min */
+  centroidApproachKmMin: 0,      /* vitesse d'approche du centroid km/min */
+  centroidDistKm:        999,    /* distance actuelle du centroid */
+  count5min:             0,      /* éclairs dans les 5 dernières min */
+  count5minPrev:         0,      /* éclairs dans les 5-10 min précédentes */
+
+  /* AS3935 local */
+  as3935DistKm:          -1,     /* -1 = aucun */
+  as3935Count:           0
+};
+
+/* ============================================================
+   MOTEUR DE SCORING NOWCAST
+   Retourne un score 0-100 et un niveau 0-5
+   basé sur les techniques de nowcasting professionnel.
+
+   Sources et poids :
+   ┌─────────────────────────────────────┬──────┬───────────────────────────────┐
+   │ Indicateur                          │ Poids│ Justification                 │
+   ├─────────────────────────────────────┼──────┼───────────────────────────────┤
+   │ Tendance pression (BME280)          │  25% │ Signal local le + fiable      │
+   │ Score convectif (CAPE+LI+K)         │  25% │ Contexte atmosphérique        │
+   │ Blitzortung : approche centroid     │  20% │ Cellule active qui se rapproche│
+   │ Blitzortung : lightning jump        │  10% │ Intensification rapide         │
+   │ RainViewer nowcast sur station      │  10% │ Extrapolation radar directe    │
+   │ Point de rosée (BME280 calculé)     │   5% │ Déclenchement convectif local  │
+   │ Cisaillement vertical               │   5% │ Organisation de la cellule     │
+   ├─────────────────────────────────────┼──────┼───────────────────────────────┤
+   │ AS3935 éclair local < 10 km         │ +15  │ Bonus confirmation (cap 100)  │
+   └─────────────────────────────────────┴──────┴───────────────────────────────┘
+   ============================================================ */
+function computeNowcastScore({ surfaceScore, convScore, shearScore, dP, dp10min, humidity, temp, cape }) {
+
+  /* ── 1. Tendance de pression locale (25 pts max) ─────────────────────────
+   * Technique : mesoscale pressure tendency
+   * > 2 hPa / 20 min = front de rafale imminent (signal très fort)
+   * > 1 hPa / 20 min = cellule orageuse proche
+   * dP = différence sur ~3 mesures (≈ 3 min selon fréquence)
+   * dp10min = différence sur 10 dernières mesures (estimé si dispo)
+   */
+  let pressureScore = 0;
+  const dpAbs = Math.abs(dP);
+  if      (dpAbs >= 2.0) pressureScore = 25;
+  else if (dpAbs >= 1.5) pressureScore = 20;
+  else if (dpAbs >= 1.0) pressureScore = 15;
+  else if (dpAbs >= 0.5) pressureScore = 8;
+  else if (dpAbs >= 0.2) pressureScore = 3;
+
+  /* ── 2. Score convectif CAPE + LI + K (25 pts max) ──────────────────────
+   * Déjà calculé en amont, on le normalise sur 25
+   */
+  const convNorm = Math.round(convScore * 0.25);
+
+  /* ── 3. Approche centroid Blitzortung (20 pts max) ───────────────────────
+   * Technique : cell tracking avec vecteur de déplacement
+   * Si le centroid est dans les 100 km ET se rapproche
+   * vitesse approche > 2 km/min → impact dans < 50 min
+   * vitesse approche > 4 km/min → impact dans < 25 min
+   */
+  let approachScore = 0;
+  if (nowcastState.centroidDistKm < 100 && nowcastState.centroidApproachKmMin > 0) {
+    const etaMin = nowcastState.centroidApproachKmMin > 0
+      ? nowcastState.centroidDistKm / nowcastState.centroidApproachKmMin
+      : 999;
+
+    if      (etaMin < 10)  approachScore = 20; /* < 10 min */
+    else if (etaMin < 20)  approachScore = 17;
+    else if (etaMin < 30)  approachScore = 13;
+    else if (etaMin < 45)  approachScore = 9;
+    else if (etaMin < 60)  approachScore = 5;
+
+    /* Bonus si cellule très proche même sans mouvement clair */
+    if (nowcastState.centroidDistKm < 20) approachScore = Math.max(approachScore, 10);
+    if (nowcastState.centroidDistKm < 10) approachScore = Math.max(approachScore, 16);
+  }
+
+  /* ── 4. Lightning Jump (10 pts max) ──────────────────────────────────────
+   * Technique NASA : doublement du taux d'éclairs en 5 min
+   * = phase d'intensification rapide de la cellule
+   */
+  let jumpScore = 0;
+  if (nowcastState.lightningJump) {
+    jumpScore = 10;
+  } else if (nowcastState.count5min > 0 && nowcastState.count5min > nowcastState.count5minPrev) {
+    jumpScore = 5; /* augmentation simple sans doublement */
+  }
+
+  /* ── 5. RainViewer nowcast sur la station (10 pts max) ───────────────────
+   * Si l'extrapolation radar prédit des précipitations sur la station
+   * dans les 15 prochaines minutes → signal direct
+   */
+  let nowcastScore = 0;
+  if (nowcastState.stationUnderRain15min) {
+    nowcastScore = 10;
+  }
+
+  /* ── 6. Point de rosée BME280 (5 pts max) ────────────────────────────────
+   * Td = T - ((100 - HR) / 5)  [approximation Magnus]
+   * Dew point depression (T - Td) < 3°C avec CAPE > 200 = déclenchement probable
+   */
+  let dewScore = 0;
+  if (temp > 0 && humidity > 0) {
+    const Td  = temp - ((100 - humidity) / 5);
+    const DPD = temp - Td; /* dew point depression */
+    if      (DPD < 2 && cape > 500) dewScore = 5;
+    else if (DPD < 3 && cape > 200) dewScore = 3;
+    else if (DPD < 5)               dewScore = 1;
+  }
+
+  /* ── 7. Cisaillement (5 pts max) ─────────────────────────────────────────
+   * Déjà calculé, on le normalise sur 5
+   */
+  const shearNorm = Math.round(shearScore * 0.05);
+
+  /* ── Score brut ── */
+  let raw = pressureScore + convNorm + approachScore + jumpScore + nowcastScore + dewScore + shearNorm;
+
+  /* ── Bonus AS3935 (confirmation locale, plafonné) ── */
+  let as3935Bonus = 0;
+  if (nowcastState.as3935DistKm > 0) {
+    if      (nowcastState.as3935DistKm <= 5)  as3935Bonus = 15;
+    else if (nowcastState.as3935DistKm <= 10) as3935Bonus = 10;
+    else if (nowcastState.as3935DistKm <= 20) as3935Bonus = 5;
+  }
+
+  const finalScore = Math.min(100, Math.round(raw + as3935Bonus));
+
+  /* ── Niveau 0–5 et texte ── */
+  let level = 0, text = "Calme ☀️", icon = "☀️";
+
+  /* Les niveaux sont intentionnellement stricts :
+   * on veut des faux négatifs plutôt que des faux positifs
+   * pour une prévision précise à -15 min */
+  if (finalScore >= 15) { level=1; text="Atmosphère légèrement instable";       icon="🌤️"; }
+  if (finalScore >= 30) { level=2; text="Instabilité notable, surveiller";       icon="🌦️"; }
+  if (finalScore >= 50) { level=3; text="⛈️ Développement orageux probable";     icon="⛈️"; }
+  if (finalScore >= 65) { level=4; text="🌩️ Orage en approche — rester vigilant"; icon="🌩️"; }
+  if (finalScore >= 80) { level=5; text="🚨 Orage imminent sur la station";       icon="🚨"; }
+
+  /* Override niveau 5 si éclair AS3935 très proche — réalité terrain */
+  if (nowcastState.as3935DistKm > 0 && nowcastState.as3935DistKm <= 5) {
+    level = Math.max(level, 4);
+    if (finalScore >= 60) { level = 5; text = "🚨 Foudre TRÈS PROCHE — < 5 km"; icon = "🚨"; }
+  }
+
+  console.log(`[Score] Final=${finalScore} | Pression=${pressureScore} Conv=${convNorm} Approche=${approachScore} Jump=${jumpScore} Nowcast=${nowcastScore} Dew=${dewScore} Shear=${shearNorm} AS3935=+${as3935Bonus}`);
+
+  return { score: finalScore, level, text, icon };
+}
+
+/* ============================================================
+   ANALYSE ORAGEUSE (compat. ancien code — redirige vers le nouveau)
    ============================================================ */
 function computeStormActivity({ globalScore, humidity, dP, cape, shear }) {
-  let level = 0, text = "Calme", icon = "☀️";
-  if (globalScore > 40 || cape > 300)                                         { level=1; text="Atmosphère instable";                  icon="🌦️"; }
-  if (globalScore > 55 && humidity > 65 && dP > 0.5)                         { level=2; text="⛈️ Développement convectif probable";  icon="⛈️"; }
-  if (globalScore > 65 && cape > 800 && humidity > 70)                        { level=3; text="🌩️ Orage probable en formation";       icon="🌩️"; }
-  if (globalScore > 75 && cape > 1200 && shear > 20)                          { level=4; text="⚡ Orage organisé (structure active)"; icon="⚡";  }
-  if (globalScore > 85 && cape > 1800 && shear > 25 && dP > 1)               { level=5; text="🚨 Risque orage sévère (rafales / grêle)"; icon="🚨"; }
-  return { level, text, icon };
+  /* Cette fonction est gardée pour compatibilité mais le vrai calcul
+   * se fait dans computeNowcastScore() */
+  return computeNowcastScore({
+    surfaceScore: globalScore,
+    convScore:    Math.min(100, cape > 2000 ? 85 : cape > 1000 ? 65 : cape > 500 ? 40 : cape > 200 ? 20 : 0),
+    shearScore:   shear > 30 ? 100 : shear > 20 ? 70 : shear > 10 ? 40 : 10,
+    dP, dp10min: dP, humidity, temp: 20, cape
+  });
 }
 
 /* ============================================================
@@ -616,15 +777,14 @@ function initMap() {
   /* Carte de base OpenStreetMap */
   const osmBase = L.tileLayer(
     'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    { attribution: '© OpenStreetMap', maxZoom: 13 }
+    { attribution: '© OpenStreetMap', maxZoom: 16 }
   );
 
-  /* Couche topographique OpenTopoMap (relief + cours d'eau + forêts) */
   topoLayer = L.tileLayer(
     'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
     {
       attribution: '© OpenTopoMap',
-      maxZoom: 13,
+      maxZoom: 16,
       opacity: 0.55
     }
   );
@@ -691,30 +851,33 @@ async function updateRadarLayer() {
   try {
     const res  = await fetch("https://api.rainviewer.com/public/weather-maps.json");
     const data = await res.json();
+
+    /* L'API retourne un champ "host" et un "path" à combiner */
+    const host = data.host || "https://tilecache.rainviewer.com";
     const past = data.radar?.past || [];
     if (!past.length) return;
 
     const latest = past[past.length - 1];
 
     /*
-     * Tiles RainViewer 256px — compatibles zoom 1-12 sans configuration spéciale.
-     * On n'utilise PAS tileSize:512 + zoomOffset:1 qui cause des problèmes
-     * sur certaines versions de Leaflet. 256px standard fonctionne partout.
+     * URL exacte selon la doc officielle RainViewer :
+     * {host}{path}/{size}/{z}/{x}/{y}/{color}/{options}.png
+     *
+     * Zoom maximum natif de RainViewer = 7 (doc officielle).
+     * On met maxNativeZoom:7 et maxZoom:16 pour que Leaflet
+     * upscale les tiles au-delà du zoom 7 sans message d'erreur.
      */
-    const tileUrl = `https://tilecache.rainviewer.com${latest.path}/512/{z}/{x}/{y}/2/1_1.png`;
+    const tileUrl = `${host}${latest.path}/256/{z}/{x}/{y}/2/1_1.png`;
 
     if (radarLayer) map.removeLayer(radarLayer);
 
     radarLayer = L.tileLayer(tileUrl, {
-      opacity: 0.6,
-      attribution: '© RainViewer',
-      tileSize: 512,
-      zoomOffset: -1,   /* tiles 512px : décaler d'un niveau pour correspondre aux tuiles 256px standard */
-      minNativeZoom: 1, /* RainViewer supporte nativement les zooms 1-12 */
-      maxNativeZoom: 12,
-      minZoom: 1,
-      maxZoom: 18,      /* Leaflet peut zoomer au-delà en interpolant — plus de message d'erreur */
-      errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' /* pixel transparent si tile manquante */
+      opacity:       0.6,
+      attribution:   '© RainViewer',
+      minNativeZoom: 1,
+      maxNativeZoom: 7,
+      minZoom:       1,
+      maxZoom:       16
     });
 
     if (layerState.radar) radarLayer.addTo(map);
