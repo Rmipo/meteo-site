@@ -1700,7 +1700,7 @@ async function loadUpperAtmosphere() {
     document.getElementById("shearInfo").textContent =
       "Cisaillement 850→700 : " + shear.toFixed(1) + " km/h (" + shearTxt + ")";
 
-    /* ---- Scores ---- */
+    /* ---- Scores convectif et cisaillement ---- */
     let convScore = 0;
     if (cape>2000) convScore+=40; else if (cape>1000) convScore+=30; else if (cape>500) convScore+=20; else if (cape>200) convScore+=10;
     if (li<-6) convScore+=25; else if (li<-4) convScore+=20; else if (li<-2) convScore+=10;
@@ -1708,8 +1708,33 @@ async function loadUpperAtmosphere() {
     convScore = Math.min(100, convScore);
 
     const shearScore = shear>30?100:shear>20?70:shear>10?40:10;
-    const { surfaceScore } = surfaceData;
-    const globalScoreV2 = Math.round(Math.min(100, surfaceScore*0.4 + convScore*0.4 + shearScore*0.2));
+
+    /* ---- Calcul du score SURFACE (tendance pression + humidité) ---- */
+    const { surfaceScore, last, prev } = surfaceData;
+    let dP = 0;
+    if (last && prev) {
+      dP = parseFloat(prev.pressure) - parseFloat(last.pressure);
+    }
+
+    /* ---- Mise à jour nowcastState avec AS3935 ---- */
+    if (last && last.lightning_dist !== undefined) {
+      const d = parseFloat(last.lightning_dist);
+      nowcastState.as3935DistKm  = (!isNaN(d) && d > 0) ? d : -1;
+      nowcastState.as3935Count   = parseInt(last.lightning_count) || 0;
+    }
+
+    /* ---- NOUVEAU MOTEUR DE SCORING ---- */
+    const temp     = last ? parseFloat(last.temperature) : 20;
+    const humidity = last ? parseFloat(last.humidity)    : 50;
+
+    const nowcast = computeNowcastScore({
+      surfaceScore, convScore, shearScore,
+      dP, dp10min: dP,
+      humidity, temp, cape
+    });
+
+    /* Score global = score du nouveau moteur */
+    const globalScoreV2 = nowcast.score;
 
     document.getElementById("globalBar").style.width = globalScoreV2 + "%";
     document.getElementById("globalPct").textContent = globalScoreV2 + " %";
@@ -1719,45 +1744,43 @@ async function loadUpperAtmosphere() {
       "Vent cellule : " + avgSpeed.toFixed(1) + " km/h (" + Math.round(avgDir) + "°)";
     document.getElementById("stormArrow").textContent = arrowFromDeg(correctedMoveDeg);
 
-    /* ---- Direction déplacement — seulement si score >= 40 ---- */
-    if (globalScoreV2 >= 40) {
+    /* ---- Direction déplacement — seulement si score >= 30 ---- */
+    if (globalScoreV2 >= 30) {
       document.getElementById("stormDirection").textContent =
         "Direction déplacement : " + arrowFromDeg(correctedMoveDeg) + " (" + correctedMoveDeg.toFixed(0) + "°)";
     } else {
       document.getElementById("stormDirection").textContent = "Direction déplacement : --";
     }
 
-    /* ---- ETA — seulement si orage probable, avec couleur progressive ---- */
+    /* ---- ETA — seulement si score >= 30, avec couleur progressive ---- */
     const etaEl = document.getElementById("stormETA");
-    if (globalScoreV2 >= 40 && avgSpeed > 3) {
-      const etaMin = Math.round((10 / avgSpeed) * 60);
-      let etaColor = "#94a3b8"; /* gris par défaut */
-      if      (etaMin < 15) etaColor = "#ef4444"; /* rouge — très proche */
-      else if (etaMin < 30) etaColor = "#f97316"; /* orange — proche */
-      else if (etaMin < 60) etaColor = "#eab308"; /* jaune — à surveiller */
-      etaEl.innerHTML = `Arrivée estimée (10 km) : <span style="color:${etaColor};font-weight:700;">${etaMin} min</span>`;
+    if (globalScoreV2 >= 30 && avgSpeed > 3) {
+      /* ETA basé sur la distance du centroid Blitzortung si dispo, sinon 10 km */
+      const distRef = nowcastState.centroidDistKm < 200 ? nowcastState.centroidDistKm : 10;
+      const etaMin  = Math.round((distRef / avgSpeed) * 60);
+      let etaColor  = "#94a3b8";
+      if      (etaMin < 15) etaColor = "#ef4444";
+      else if (etaMin < 30) etaColor = "#f97316";
+      else if (etaMin < 60) etaColor = "#eab308";
+      etaEl.innerHTML = `Arrivée estimée : <span style="color:${etaColor};font-weight:700;">${etaMin} min</span>`;
     } else {
-      etaEl.textContent = "Arrivée estimée (10 km) : n/a";
+      etaEl.textContent = "Arrivée estimée : n/a";
     }
 
-    /* ---- Tendance — toujours affichée ---- */
-    const { last, prev } = surfaceData;
-    let dP = 0;
+    /* ---- Tendance ---- */
     if (last && prev) {
-      dP = parseFloat(prev.pressure) - parseFloat(last.pressure);
       const humTrend = parseFloat(last.humidity) - parseFloat(prev.humidity);
       let trend = "Stable";
-      if (dP>0.8 && humTrend>2) trend="⬆️ Renforcement";
-      else if (dP<0.2)           trend="⬇️ Affaiblissement";
-      else if (dP>0.4)           trend="↗️ Légère hausse";
+      if      (dP > 0.8 && humTrend > 2) trend = "⬆️ Renforcement";
+      else if (dP < 0.2)                  trend = "⬇️ Affaiblissement";
+      else if (dP > 0.4)                  trend = "↗️ Légère hausse";
       document.getElementById("stormTrend").textContent = "Tendance : " + trend;
     }
 
-    /* ---- Activité — toujours affichée ---- */
-    const activity = computeStormActivity({ globalScore: globalScoreV2, humidity: last ? parseFloat(last.humidity) : 0, dP, cape, shear });
-    document.getElementById("icon").textContent      = activity.icon;
-    document.getElementById("alert").textContent     = activity.text;
-    document.getElementById("stormReal").textContent = "Activité niveau " + activity.level + "/5";
+    /* ---- Activité — nouveau moteur ---- */
+    document.getElementById("icon").textContent      = nowcast.icon;
+    document.getElementById("alert").textContent     = nowcast.text;
+    document.getElementById("stormReal").textContent = "Activité niveau " + nowcast.level + "/5";
 
     for (let i=1; i<=5; i++) {
       const dot = document.getElementById("dot"+i);
@@ -1952,20 +1975,45 @@ async function loadLightning() {
     document.getElementById("lgt-status").textContent =
       "Source : Blitzortung.org — " + nearby.length + " impacts reçus — " + new Date().toLocaleTimeString("fr-FR");
 
-    /* Mise à jour impacts sur la carte */
-    if (layerState.strikes) updateStrikesOnMap(lightningHistory);
+    /* ---- Mise à jour nowcastState ---- */
+    nowcastState.count5min     = lightningHistory.filter(s => Date.now()-s.ts < 5*60*1000).length;
+    nowcastState.count5minPrev = lightningHistory.filter(s => Date.now()-s.ts >= 5*60*1000 && Date.now()-s.ts < 10*60*1000).length;
+    nowcastState.lightningJump = nowcastState.count5min >= 3 &&
+                                  nowcastState.count5minPrev > 0 &&
+                                  nowcastState.count5min >= nowcastState.count5minPrev * 2;
 
-    /* Calcul du centroid des éclairs récents (30 dernières minutes) pour la trajectoire */
-    const recent30 = lightningHistory.filter(s => Date.now() - s.ts < 30 * 60 * 1000);
-    if (recent30.length >= 3) {
-      strikeCentroid = {
-        lat: recent30.reduce((a, b) => a + b.lat, 0) / recent30.length,
-        lon: recent30.reduce((a, b) => a + b.lon, 0) / recent30.length,
-        hasStrikes: true
-      };
+    /* Calcul du centroid des éclairs récents (30 dernières minutes) */
+    const nc_recent30 = lightningHistory.filter(s => Date.now() - s.ts < 30 * 60 * 1000);
+    const nc_recent5  = lightningHistory.filter(s => Date.now() - s.ts < 5  * 60 * 1000);
+    const nc_prev5    = lightningHistory.filter(s => Date.now()-s.ts >= 5*60*1000 && Date.now()-s.ts < 10*60*1000);
+
+    if (nc_recent30.length >= 3) {
+      const cLat = nc_recent30.reduce((a,b) => a+b.lat, 0) / nc_recent30.length;
+      const cLon = nc_recent30.reduce((a,b) => a+b.lon, 0) / nc_recent30.length;
+      nowcastState.centroidDistKm = haversine(LAT, LON, cLat, cLon);
+
+      strikeCentroid = { lat: cLat, lon: cLon, hasStrikes: true };
+
+      /* Vitesse d'approche : comparer centroid des 5 dernières min vs 5-10 min avant */
+      if (nc_recent5.length >= 2 && nc_prev5.length >= 2) {
+        const cLat5    = nc_recent5.reduce((a,b) => a+b.lat, 0) / nc_recent5.length;
+        const cLon5    = nc_recent5.reduce((a,b) => a+b.lon, 0) / nc_recent5.length;
+        const cLatP    = nc_prev5.reduce((a,b)  => a+b.lat, 0) / nc_prev5.length;
+        const cLonP    = nc_prev5.reduce((a,b)  => a+b.lon, 0) / nc_prev5.length;
+        const distNow  = haversine(LAT, LON, cLat5, cLon5);
+        const distPrev = haversine(LAT, LON, cLatP, cLonP);
+        nowcastState.centroidApproachKmMin = Math.max(0, (distPrev - distNow) / 5);
+      } else {
+        nowcastState.centroidApproachKmMin = 0;
+      }
     } else {
       strikeCentroid = { lat: LAT, lon: LON, hasStrikes: false };
+      nowcastState.centroidDistKm        = 999;
+      nowcastState.centroidApproachKmMin = 0;
     }
+
+    /* Mise à jour impacts sur la carte */
+    if (layerState.strikes) updateStrikesOnMap(lightningHistory);
 
     /* Détection et dessin des foyers orageux */
     detectAndDrawFoci();
@@ -1980,6 +2028,7 @@ async function loadNowcast() {
   try {
     const res  = await fetch("https://api.rainviewer.com/public/weather-maps.json");
     const data = await res.json();
+    const host    = data.host || "https://tilecache.rainviewer.com";
     const past    = data.radar?.past    || [];
     const nowcast = data.radar?.nowcast || [];
     const latestPast = past[past.length - 1];
@@ -1998,11 +2047,28 @@ async function loadNowcast() {
       if (s) s.textContent = f.plus===0 ? "Dernière image" : "Prévision extrapolée";
     });
 
+    /*
+     * Vérification si la station est sous pluie extrapolée dans 15 min.
+     * RainViewer fournit des tiles PNG. On ne peut pas lire la valeur d'un pixel
+     * directement depuis le navigateur (CORS sur canvas cross-origin).
+     * On utilise à la place l'heuristique suivante : si RainViewer fournit
+     * au moins 1 frame nowcast (= précipitations détectées quelque part),
+     * ET si le centroid Blitzortung est dans les 50 km ET se rapproche,
+     * on considère la station potentiellement sous pluie dans 15 min.
+     * C'est une approximation conservative.
+     */
+    nowcastState.stationUnderRain15min =
+      nowcast.length >= 1 &&
+      nowcastState.centroidDistKm < 50 &&
+      nowcastState.centroidApproachKmMin > 1;
+
     const lastT = latestPast ? new Date(latestPast.time*1000).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}) : "--";
     document.getElementById("nowcast-status").textContent =
-      "Dernière image radar : " + lastT + " — " + nowcast.length + " frame(s) nowcast — Source : RainViewer API";
+      "Dernière image radar : " + lastT + " — " + nowcast.length + " frame(s) nowcast" +
+      (nowcastState.stationUnderRain15min ? " — ⚠️ Pluie possible sur la station" : "") +
+      " — Source : RainViewer API";
 
-    /* Mettre à jour le radar sur la carte aussi */
+    /* Mettre à jour le radar sur la carte */
     await updateRadarLayer();
 
   } catch(err) { console.error("Erreur nowcast:", err); }
