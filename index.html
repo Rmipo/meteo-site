@@ -315,6 +315,37 @@ tbody tr:last-child td { border-bottom:none; }
 .leaflet-control-zoom a { background:#1e293b !important; color:#38bdf8 !important; border-color:#1e3a5f !important; }
 .leaflet-control-attribution { background: rgba(2,6,23,0.8) !important; color:#64748b !important; }
 .leaflet-control-attribution a { color:#38bdf8 !important; }
+
+/* ===== PIXEL TRACKING ===== */
+.pixel-box { background:var(--bg-card); border:1px solid var(--border); border-radius:20px; width:420px; margin:20px auto 0; padding:20px 24px; position:relative; font-family:var(--mono); }
+.pixel-box::before { content:''; position:absolute; top:0; left:10%; right:10%; height:1px; background:linear-gradient(90deg,transparent,#22c55e,transparent); opacity:0.5; }
+.pixel-title { font-family:var(--font); font-size:1em; font-weight:700; letter-spacing:2px; color:#22c55e; text-align:center; margin-bottom:12px; }
+.pixel-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+.pixel-item { background:var(--bg-inner); border-radius:10px; padding:10px 8px; border:1px solid var(--border); text-align:center; transition:border-color 0.5s; }
+.pixel-item.rain-active { border-color:#38bdf8; }
+.pixel-item.storm-active { border-color:#ef4444; }
+.pixel-time { font-size:0.65em; color:var(--muted); margin-bottom:4px; }
+.pixel-val  { font-size:1.2em; font-weight:700; color:#22c55e; }
+.pixel-sub  { font-size:0.65em; color:var(--muted); margin-top:2px; }
+
+/* ===== PANNEAU VALIDATION ÉPISODE ===== */
+.episode-panel { display:none; background:var(--bg-card); border:1px solid #f97316; border-radius:20px; width:420px; margin:20px auto 0; padding:24px; position:relative; font-family:var(--mono); }
+.episode-panel::before { content:''; position:absolute; top:0; left:10%; right:10%; height:1px; background:linear-gradient(90deg,transparent,#f97316,transparent); opacity:0.7; }
+.episode-title { font-family:var(--font); font-size:1em; font-weight:700; letter-spacing:2px; color:#f97316; text-align:center; margin-bottom:14px; }
+.episode-btns { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-bottom:12px; }
+.ep-btn { font-family:var(--mono); font-size:0.75em; padding:7px 14px; border-radius:8px; border:1px solid var(--border); background:var(--bg-inner); color:var(--text); cursor:pointer; transition:all 0.2s; letter-spacing:1px; }
+.ep-btn:hover { transform:scale(1.05); }
+.ep-btn.oui   { border-color:#ef4444; color:#ef4444; }
+.ep-btn.fort  { border-color:#f97316; color:#f97316; }
+.ep-btn.grele { border-color:#a78bfa; color:#a78bfa; }
+.ep-btn.pluie { border-color:#38bdf8; color:#38bdf8; }
+.ep-btn.faux  { border-color:var(--muted); color:var(--muted); }
+.episode-status { font-size:0.75em; color:var(--muted); text-align:center; margin-top:8px; }
+
+/* ===== DP 10 MIN BADGE ===== */
+.dp10-badge { display:inline-block; font-family:var(--mono); font-size:0.72em; padding:3px 8px; border-radius:6px; margin-top:6px; border:1px solid var(--border); color:var(--muted); transition:all 0.5s; }
+.dp10-badge.warning { border-color:#f97316; color:#f97316; }
+.dp10-badge.danger  { border-color:#ef4444; color:#ef4444; animation:blink 1s infinite; }
 </style>
 </head>
 <body>
@@ -355,6 +386,7 @@ tbody tr:last-child td { border-bottom:none; }
   <div class="bar-wrap">
     <div class="bar-label-row"><span>Score intensité surface</span><span id="intensityPct">0 %</span></div>
     <div class="bar"><div class="fill" id="intensityBar"></div></div>
+    <div class="dp10-badge" id="dp10-badge">ΔP 10min : calcul en cours...</div>
   </div>
   <div class="bar-wrap">
     <div class="bar-label-row"><span>Score atmosphérique global</span><span id="globalPct">0 %</span></div>
@@ -413,6 +445,47 @@ tbody tr:last-child td { border-bottom:none; }
   <div style="font-size:0.7em;color:var(--muted);margin-top:8px;text-align:center;" id="as-status">
     AS3935 — en attente de données
   </div>
+</div>
+
+<!-- ===== PIXEL TRACKING RAINVIEWER (via Railway) ===== -->
+<div class="pixel-box" id="pixel-box">
+  <div class="pixel-title">📡 Radar — Position exacte de la station</div>
+  <div class="pixel-grid">
+    <div class="pixel-item" id="px-now-item">
+      <div class="pixel-time">Maintenant</div>
+      <div class="pixel-val" id="px-now">--</div>
+      <div class="pixel-sub" id="px-now-sub">--</div>
+    </div>
+    <div class="pixel-item" id="px-10-item">
+      <div class="pixel-time">+10 min</div>
+      <div class="pixel-val" id="px-10">--</div>
+      <div class="pixel-sub" id="px-10-sub">--</div>
+    </div>
+    <div class="pixel-item" id="px-20-item">
+      <div class="pixel-time">+20 min</div>
+      <div class="pixel-val" id="px-20">--</div>
+      <div class="pixel-sub" id="px-20-sub">--</div>
+    </div>
+  </div>
+  <div style="font-size:0.7em;color:var(--muted);margin-top:10px;text-align:center;" id="px-status">
+    En attente de l'URL Railway...
+  </div>
+</div>
+
+<!-- ===== PANNEAU VALIDATION ÉPISODE ===== -->
+<div class="episode-panel" id="episode-panel">
+  <div class="episode-title">📋 Valider l'épisode météo</div>
+  <div style="font-size:0.8em;color:var(--muted);text-align:center;margin-bottom:12px;">
+    Que s'est-il passé réellement ?
+  </div>
+  <div class="episode-btns">
+    <button class="ep-btn oui"   onclick="submitEpisode('orage',3,false)">✅ Orage</button>
+    <button class="ep-btn fort"  onclick="submitEpisode('orage',4,false)">⚡ Orage fort</button>
+    <button class="ep-btn grele" onclick="submitEpisode('orage',5,true)">🧊 Grêle</button>
+    <button class="ep-btn pluie" onclick="submitEpisode('pluie',1,false)">🌧️ Pluie seule</button>
+    <button class="ep-btn faux"  onclick="submitEpisode('faux',0,false)">❌ Fausse alerte</button>
+  </div>
+  <div class="episode-status" id="episode-status">Tap pour valider cet épisode</div>
 </div>
 
 <!-- ===== BLOC ÉCLAIRS BLITZORTUNG ===== -->
@@ -507,6 +580,14 @@ tbody tr:last-child td { border-bottom:none; }
    ============================================================ */
 const SHEETS_URL         = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
 const BLITZORTUNG_PROXY_URL = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
+
+/*
+ * URL de ton bot Railway (pixel tracking + poids IA).
+ * Format : https://ton-projet.up.railway.app
+ * Laisser vide si le bot n'est pas encore déployé.
+ * Le HTML fonctionne sans — les features IA/pixel seront désactivées.
+ */
+const RAILWAY_URL = ""; /* ← coller ici l'URL Railway après déploiement */
 const LAT        = 46.42964;
 const LON        = 1.83906;
 const RAYON_KM   = 100;
@@ -1471,6 +1552,11 @@ async function loadData() {
     document.getElementById("intensityBar").style.width = surfaceScore + "%";
     document.getElementById("intensityPct").textContent = Math.round(surfaceScore) + " %";
 
+    /* Alimenter le buffer dP 10 min avec la dernière mesure */
+    pushPressure(last.pressure, parseTS(last.timestamp));
+    const dp10 = getDp10();
+    updateDp10Badge(dp10);
+
     let icon = "☀️", alertText = "Beau temps stable";
     if      (surfaceScore > 80) { icon="🌩️"; alertText="Orage intense possible"; }
     else if (surfaceScore > 60) { icon="⛈️"; alertText="Orage probable"; }
@@ -1557,6 +1643,179 @@ function buildChart7j(data) {
    Chargé une seule fois au démarrage.
    ============================================================ */
 let topoCorrection = 0; /* degrés, global */
+
+/* ============================================================
+   BUFFER dP 10 MIN
+   Stocke les N dernières mesures de pression en mémoire JS
+   pour calculer une tendance sur 10 min indépendamment
+   de ce que retourne Apps Script (qui peut ne donner que 2-3 pts)
+   ============================================================ */
+const pressureBuffer = []; /* { ts: ms, pres: hPa } */
+const DP10_WINDOW_MS = 10 * 60 * 1000;
+
+function pushPressure(pres, ts) {
+  pressureBuffer.push({ ts, pres: parseFloat(pres) });
+  /* Garder seulement les 20 dernières minutes */
+  const cutoff = Date.now() - 20 * 60 * 1000;
+  while (pressureBuffer.length && pressureBuffer[0].ts < cutoff) pressureBuffer.shift();
+}
+
+function getDp10() {
+  if (pressureBuffer.length < 2) return null;
+  const now    = Date.now();
+  const recent = pressureBuffer[pressureBuffer.length - 1];
+  /* Chercher un point à ~10 min en arrière */
+  const old    = pressureBuffer.find(p => now - p.ts >= DP10_WINDOW_MS - 60000);
+  if (!old) return null;
+  return old.pres - recent.pres; /* positif = baisse de pression */
+}
+
+function updateDp10Badge(dp10) {
+  const badge = document.getElementById("dp10-badge");
+  if (!badge) return;
+  if (dp10 === null) {
+    badge.textContent  = "ΔP 10min : données insuffisantes";
+    badge.className    = "dp10-badge";
+    return;
+  }
+  const sign = dp10 > 0 ? "↓" : "↑";
+  badge.textContent = "ΔP 10min : " + sign + " " + Math.abs(dp10).toFixed(1) + " hPa";
+  if      (dp10 >= 2.0) badge.className = "dp10-badge danger";
+  else if (dp10 >= 1.0) badge.className = "dp10-badge warning";
+  else                  badge.className = "dp10-badge";
+}
+
+/* ============================================================
+   PIXEL TRACKING RAINVIEWER (via Railway)
+   Lit la réflectivité radar exactement sur les coordonnées GPS
+   de la station dans les frames nowcast +0/+10/+20 min.
+   Nécessite RAILWAY_URL configuré.
+   ============================================================ */
+let lastPixelData = null;
+
+async function loadPixelTracking() {
+  const pxStatus = document.getElementById("px-status");
+
+  if (!RAILWAY_URL) {
+    if (pxStatus) pxStatus.textContent = "Configurer RAILWAY_URL pour activer";
+    return;
+  }
+
+  try {
+    const res  = await fetch(RAILWAY_URL + "/pixel", { signal: AbortSignal.timeout(8000) });
+    const data = await res.json();
+    lastPixelData = data;
+
+    const intensity2label = v => v >= 70 ? "⛈️ Orage" : v >= 50 ? "🌧️ Forte pluie" : v >= 30 ? "🌧️ Pluie" : v >= 15 ? "🌦️ Bruine" : "☀️ Sec";
+    const intensity2color = v => v >= 70 ? "#ef4444" : v >= 50 ? "#f97316" : v >= 15 ? "#38bdf8" : "#22c55e";
+
+    [
+      { elVal: "px-now", elSub: "px-now-sub", elItem: "px-now-item", val: data.now },
+      { elVal: "px-10",  elSub: "px-10-sub",  elItem: "px-10-item",  val: data.in10min },
+      { elVal: "px-20",  elSub: "px-20-sub",  elItem: "px-20-item",  val: data.in20min }
+    ].forEach(({ elVal, elSub, elItem, val }) => {
+      const vEl = document.getElementById(elVal);
+      const sEl = document.getElementById(elSub);
+      const iEl = document.getElementById(elItem);
+      if (!vEl) return;
+      vEl.textContent  = (val || 0) + "%";
+      vEl.style.color  = intensity2color(val || 0);
+      if (sEl) sEl.textContent = intensity2label(val || 0);
+      if (iEl) {
+        iEl.className = "pixel-item";
+        if ((val || 0) >= 70) iEl.classList.add("storm-active");
+        else if ((val || 0) >= 15) iEl.classList.add("rain-active");
+      }
+    });
+
+    if (pxStatus) {
+      pxStatus.textContent = data.raining
+        ? (data.storm ? "⚠️ Orage détecté sur la station" : "🌧️ Précipitations sur la station")
+        : "☀️ Position sèche selon radar";
+    }
+
+    /* Injecter dans nowcastState pour le moteur de scoring */
+    nowcastState.stationUnderRain15min = (data.in10min || 0) >= 15 || (data.in20min || 0) >= 15;
+
+  } catch (e) {
+    if (pxStatus) pxStatus.textContent = "Railway non disponible — " + e.message;
+  }
+}
+
+/* ============================================================
+   VENT SOL Open-Meteo (en attendant l'anémomètre)
+   Charge windspeed_10m et winddirection_10m
+   Un changement brusque de direction > 90° en 1h = gust front
+   ============================================================ */
+let windSol = { speed: 0, dir: 0 };
+let windSolPrev = { speed: 0, dir: 0 };
+
+async function loadWindSol() {
+  try {
+    const api = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=windspeed_10m,winddirection_10m&forecast_days=1&timezone=Europe%2FParis`;
+    const res  = await fetch(api);
+    const data = await res.json();
+    const hour = new Date().getHours();
+    windSolPrev = { ...windSol };
+    windSol = {
+      speed: data.hourly.windspeed_10m?.[hour]  ?? 0,
+      dir:   data.hourly.winddirection_10m?.[hour] ?? 0
+    };
+    console.log(`[Vent sol] ${windSol.speed} km/h dir=${windSol.dir}°`);
+  } catch (e) {
+    console.warn("[Vent sol]", e.message);
+  }
+}
+
+/* ============================================================
+   VALIDATION ÉPISODE (depuis le site web)
+   Sauvegarde dans Apps Script → onglet Episodes
+   ============================================================ */
+let currentEpisodeWeb = null;
+
+function openEpisodePanel(scoreSnapshot) {
+  currentEpisodeWeb = {
+    id:        Date.now(),
+    start_ts:  new Date().toISOString(),
+    ...scoreSnapshot
+  };
+  const panel = document.getElementById("episode-panel");
+  if (panel) panel.style.display = "block";
+  const status = document.getElementById("episode-status");
+  if (status) status.textContent = "Tap pour valider cet épisode";
+}
+
+function closeEpisodePanel() {
+  const panel = document.getElementById("episode-panel");
+  if (panel) panel.style.display = "none";
+  currentEpisodeWeb = null;
+}
+
+async function submitEpisode(type, intensite, grele) {
+  if (!currentEpisodeWeb) return;
+
+  currentEpisodeWeb.orage_reel = type !== "faux";
+  currentEpisodeWeb.intensite  = intensite;
+  currentEpisodeWeb.grele      = grele;
+
+  const status = document.getElementById("episode-status");
+  if (status) status.textContent = "Sauvegarde en cours...";
+
+  /* Désactiver les boutons */
+  document.querySelectorAll(".ep-btn").forEach(b => b.style.opacity = "0.4");
+
+  try {
+    await fetch(SHEETS_URL + "?action=saveEpisode", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(currentEpisodeWeb)
+    });
+    if (status) status.textContent = "✅ Épisode sauvegardé. Merci !";
+    setTimeout(closeEpisodePanel, 2000);
+  } catch (e) {
+    if (status) status.textContent = "❌ Erreur : " + e.message;
+  }
+}
 
 async function loadTopoCorrection() {
   try {
@@ -1727,14 +1986,22 @@ async function loadUpperAtmosphere() {
     const temp     = last ? parseFloat(last.temperature) : 20;
     const humidity = last ? parseFloat(last.humidity)    : 50;
 
+    /* dP 10 min depuis le buffer JS (plus précis que dP 3min) */
+    const dp10real = getDp10();
+
+    /* Correction vent sol : si changement de direction brutal → bonus score */
+    const windDirChange = Math.abs(((windSol.dir - windSolPrev.dir + 540) % 360) - 180);
+    const gustFrontBonus = (windDirChange > 60 && windSol.speed > 10) ? 10 : 0;
+
     const nowcast = computeNowcastScore({
       surfaceScore, convScore, shearScore,
-      dP, dp10min: dP,
+      dP,
+      dp10min: dp10real !== null ? dp10real : dP,
       humidity, temp, cape
     });
 
-    /* Score global = score du nouveau moteur */
-    const globalScoreV2 = nowcast.score;
+    /* Appliquer le bonus gust front */
+    const globalScoreV2 = Math.min(100, nowcast.score + gustFrontBonus);
 
     document.getElementById("globalBar").style.width = globalScoreV2 + "%";
     document.getElementById("globalPct").textContent = globalScoreV2 + " %";
@@ -1828,7 +2095,27 @@ async function loadUpperAtmosphere() {
       stormSection.style.display = "none";
     }
 
-    console.log(`[Atmo] Score: ${globalScoreV2} | Conv: ${convScore} | Surface: ${surfaceScore} | Shear: ${shearScore} | Vent: ${avgSpeed.toFixed(1)}km/h → ${correctedMoveDeg.toFixed(0)}°`);
+    /* Ouvrir le panneau de validation si score élevé et pas déjà ouvert */
+    if (globalScoreV2 >= SEUIL_ORAGE && !currentEpisodeWeb) {
+      openEpisodePanel({
+        dist_as3935:     nowcastState.as3935DistKm,
+        energy:          nowcastState.as3935Count,
+        score_pression:  nowcast.debug?.pressureScore || 0,
+        score_convectif: nowcast.debug?.convNorm       || 0,
+        score_approche:  nowcast.debug?.approachScore  || 0,
+        score_jump:      nowcast.debug?.jumpScore       || 0,
+        score_nowcast:   nowcast.debug?.nowcastScore    || 0,
+        score_rosee:     nowcast.debug?.dewScore        || 0,
+        pixel_now:       lastPixelData?.now             || 0,
+        pixel_10m:       lastPixelData?.in10min         || 0,
+        score_final:     globalScoreV2
+      });
+    } else if (globalScoreV2 < 30 && currentEpisodeWeb) {
+      /* Score redescendu — fermer le panneau si pas encore validé */
+      closeEpisodePanel();
+    }
+
+    console.log(`[Atmo] Score: ${globalScoreV2} | Conv: ${convScore} | Surface: ${surfaceScore} | Shear: ${shearScore} | GustFront: +${gustFrontBonus} | Vent: ${avgSpeed.toFixed(1)}km/h → ${correctedMoveDeg.toFixed(0)}°`);
 
   } catch(err) { console.error("Erreur loadUpperAtmosphere:", err); }
 }
@@ -2083,14 +2370,32 @@ async function init() {
   await loadUpperAtmosphere();
   await loadNowcast();
   await loadLightning();
+  await loadWindSol();
+  await loadPixelTracking();
 }
 
 init();
 
-setInterval(async () => { await loadData(); await loadUpperAtmosphere(); }, 60000);
+/* Données surface + analyse toutes les 60 s */
+setInterval(async () => {
+  await loadData();
+  await loadUpperAtmosphere();
+}, 60000);
+
+/* Open-Meteo toutes les 5 min */
 setInterval(loadUpperAtmosphere, 300000);
+
+/* Éclairs toutes les 60 s */
 setInterval(loadLightning, 60000);
+
+/* Nowcast toutes les 5 min */
 setInterval(loadNowcast, 300000);
+
+/* Vent sol toutes les 30 min (change lentement) */
+setInterval(loadWindSol, 30 * 60 * 1000);
+
+/* Pixel tracking toutes les 5 min */
+setInterval(loadPixelTracking, 5 * 60 * 1000);
 </script>
 </body>
 </html>
