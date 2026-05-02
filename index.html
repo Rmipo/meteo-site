@@ -579,7 +579,7 @@ tbody tr:last-child td { border-bottom:none; }
    CONFIG
    ============================================================ */
 const SHEETS_URL         = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
-const BLITZORTUNG_PROXY_URL = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
+const BLITZORTUNG_PROXY_URL = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec?blitz=1";
 
 /*
  * URL de ton bot Railway (pixel tracking + poids IA).
@@ -587,7 +587,7 @@ const BLITZORTUNG_PROXY_URL = "https://script.google.com/macros/s/AKfycbzN4vd29m
  * Laisser vide si le bot n'est pas encore déployé.
  * Le HTML fonctionne sans — les features IA/pixel seront désactivées.
  */
-const RAILWAY_URL = "botdiscord-production-67d8.up.railway.app"; /* ← coller ici l'URL Railway après déploiement */
+const RAILWAY_URL = "https://botdiscord-production-67d8.up.railway.app"; /* URL Railway avec https */
 const LAT        = 46.42964;
 const LON        = 1.83906;
 const RAYON_KM   = 100;
@@ -819,7 +819,10 @@ function computeNowcastScore({ surfaceScore, convScore, shearScore, dP, dp10min,
 
   console.log(`[Score] Final=${finalScore} | Pression=${pressureScore} Conv=${convNorm} Approche=${approachScore} Jump=${jumpScore} Nowcast=${nowcastScore} Dew=${dewScore} Shear=${shearNorm} AS3935=+${as3935Bonus}`);
 
-  return { score: finalScore, level, text, icon };
+  return {
+    score: finalScore, level, text, icon,
+    debug: { pressureScore, convNorm, approachScore, jumpScore, nowcastScore, dewScore, shearNorm }
+  };
 }
 
 /* ============================================================
@@ -2052,7 +2055,7 @@ async function loadUpperAtmosphere() {
     for (let i=1; i<=5; i++) {
       const dot = document.getElementById("dot"+i);
       dot.className = "dot";
-      if (i <= activity.level) dot.classList.add("on-"+i);
+      if (i <= nowcast.level) dot.classList.add("on-"+i);
     }
 
     /* ---- Vecteurs trajectoire depuis centroid Blitzortung (ou station si pas d'éclairs) ---- */
@@ -2208,11 +2211,41 @@ async function loadLightning() {
   }
   try {
     const res     = await fetch(BLITZORTUNG_PROXY_URL);
-    const strikes = await res.json();
+    const raw     = await res.json();
     const now     = Date.now();
 
+    /*
+     * Blitzortung rr_latest.json peut retourner différents formats selon le proxy.
+     * Format 1 (API directe) : { time, lat, lon, alt, pol, mds, mcg, status, region_name, delay, ... }
+     *   → lat/lon en degrés décimaux, time en secondes unix
+     * Format 2 (certains miroirs) : { time, lat, lon } avec lat/lon * 10 ou * 100
+     * On normalise : si |lat| > 90, on divise par 10 jusqu'à avoir une valeur valide.
+     */
+    const rawArr = Array.isArray(raw) ? raw : (raw.strikes || raw.data || []);
+
+    const normalize = (v) => {
+      let n = parseFloat(v);
+      while (Math.abs(n) > 90 && n !== 0) n = n / 10;
+      return n;
+    };
+    const normalizeLon = (v) => {
+      let n = parseFloat(v);
+      while (Math.abs(n) > 180 && n !== 0) n = n / 10;
+      return n;
+    };
+
+    const strikes = rawArr
+      .filter(s => s && (s.lat !== undefined || s.latitude !== undefined))
+      .map(s => ({
+        lat: normalize(s.lat !== undefined ? s.lat : s.latitude),
+        lon: normalizeLon(s.lon !== undefined ? s.lon : (s.lng !== undefined ? s.lng : s.longitude)),
+        ts:  (s.time !== undefined ? parseFloat(s.time) : parseFloat(s.timestamp)) * 1000
+      }))
+      .filter(s => !isNaN(s.lat) && !isNaN(s.lon) && !isNaN(s.ts)
+                   && Math.abs(s.lat) <= 90 && Math.abs(s.lon) <= 180);
+
     const nearby = strikes
-      .map(s => ({ lat: s.lat, lon: s.lon, dist: haversine(LAT, LON, s.lat, s.lon), ts: s.time * 1000 }))
+      .map(s => ({ ...s, dist: haversine(LAT, LON, s.lat, s.lon) }))
       .filter(s => s.dist <= RAYON_KM)
       .sort((a,b) => a.dist - b.dist);
 
