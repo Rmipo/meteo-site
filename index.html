@@ -578,8 +578,8 @@ tbody tr:last-child td { border-bottom:none; }
 /* ============================================================
    CONFIG
    ============================================================ */
-const SHEETS_URL         = "https://script.google.com/macros/s/AKfycbwSxJLpIDmw4LBGMZFb1hR-AScuFL_9BS4IHTqHsC_In5bbm6xobPGYpfv7tGh8XQzK/exec";
-const BLITZORTUNG_PROXY_URL = "https://script.google.com/macros/s/AKfycbwSxJLpIDmw4LBGMZFb1hR-AScuFL_9BS4IHTqHsC_In5bbm6xobPGYpfv7tGh8XQzK/exec?blitz=1";
+const SHEETS_URL         = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec";
+const BLITZORTUNG_PROXY_URL = "https://script.google.com/macros/s/AKfycbzN4vd29mRmM9cnd4_hCjIbyqfooOkAfzYTB9tyKBZBBXfHR2zC_Pp3ngD_DTCF1wDs/exec?blitz=1";
 
 /*
  * URL de ton bot Railway (pixel tracking + poids IA).
@@ -1504,7 +1504,20 @@ async function loadData() {
   try {
     /* === APPEL UNIQUE — on récupère tout ce que retourne Apps Script === */
     const res  = await fetch(SHEETS_URL);
-    const raw  = await res.json();
+
+    /* Diagnostic — log statut HTTP et réponse brute */
+    console.log('[loadData] HTTP status:', res.status, res.statusText);
+    const text = await res.text();
+    console.log('[loadData] Réponse brute:', text.substring(0, 150));
+
+    let raw;
+    try {
+      raw = JSON.parse(text);
+    } catch(jsonErr) {
+      console.error('[loadData] ERREUR JSON:', jsonErr.message, '| Réponse:', text.substring(0, 300));
+      document.getElementById("status").textContent = "Erreur serveur — voir console F12";
+      return;
+    }
     const rawData = Array.isArray(raw) ? raw : [raw];
 
     /* Debug : afficher le premier timestamp brut reçu */
@@ -1705,11 +1718,19 @@ async function loadPixelTracking() {
   }
 
   try {
-    const res  = await fetch(RAILWAY_URL + "/pixel", { signal: AbortSignal.timeout(8000) });
+    /* AbortSignal.timeout() non supporté sur tous les navigateurs — timeout manuel */
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 8000);
+    let res;
+    try {
+      res = await fetch(RAILWAY_URL + "/pixel", { signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
     const data = await res.json();
     lastPixelData = data;
 
-    const intensity2label = v => v >= 70 ? "⛈️ Orage" : v >= 50 ? "🌧️ Forte pluie" : v >= 30 ? "🌧️ Pluie" : v >= 15 ? "🌦️ Bruine" : "☀️ Sec";
+    const intensity2label = v => v >= 60 ? "⛈️ Orage" : v >= 40 ? "🌧️ Forte pluie" : v >= 25 ? "🌧️ Pluie" : v >= 10 ? "🌦️ Pluie faible" : "☀️ Sec";
     const intensity2color = v => v >= 70 ? "#ef4444" : v >= 50 ? "#f97316" : v >= 15 ? "#38bdf8" : "#22c55e";
 
     [
@@ -2211,15 +2232,33 @@ async function loadLightning() {
   }
   try {
     const res     = await fetch(BLITZORTUNG_PROXY_URL);
-    const raw     = await res.json();
     const now     = Date.now();
 
+    /* Diagnostic — log ce qu'on reçoit vraiment */
+    const rawText = await res.text();
+    console.log('[Blitz] HTTP:', res.status, '| Reçu (100c):', rawText.substring(0, 100));
+
+    let raw;
+    try { raw = JSON.parse(rawText); }
+    catch(e) {
+      console.error('[Blitz] JSON invalide:', rawText.substring(0, 200));
+      document.getElementById("lgt-status").textContent = "Erreur JSON Blitzortung — voir console";
+      return;
+    }
+
+    /* Si on reçoit des données météo (temperature) au lieu d'éclairs = Apps Script mal routé */
+    if (raw && (Array.isArray(raw) ? raw[0] : raw).temperature !== undefined) {
+      console.error('[Blitz] ERREUR : Apps Script retourne les données météo au lieu de Blitzortung !');
+      console.error('[Blitz] Vérifie que Apps Script v8 est bien déployé et que ?blitz=1 est dans l URL');
+      document.getElementById("lgt-status").textContent = "⚠️ Apps Script mal configuré — voir console F12";
+      document.getElementById("lgt-trend").textContent = "Redéployer Apps Script v8 avec ?blitz=1";
+      return;
+    }
+
     /*
-     * Blitzortung rr_latest.json peut retourner différents formats selon le proxy.
-     * Format 1 (API directe) : { time, lat, lon, alt, pol, mds, mcg, status, region_name, delay, ... }
-     *   → lat/lon en degrés décimaux, time en secondes unix
-     * Format 2 (certains miroirs) : { time, lat, lon } avec lat/lon * 10 ou * 100
-     * On normalise : si |lat| > 90, on divise par 10 jusqu'à avoir une valeur valide.
+     * Blitzortung rr_latest.json retourne un tableau d'objets :
+     * { time, lat, lon, ... } avec time en secondes unix
+     * Certains miroirs encodent lat/lon * 10 ou * 100 — on normalise.
      */
     const rawArr = Array.isArray(raw) ? raw : (raw.strikes || raw.data || []);
 
