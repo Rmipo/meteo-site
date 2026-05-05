@@ -944,14 +944,18 @@ async function updateRadarLayer() {
     const latest = past[past.length - 1];
 
     /*
-     * URL exacte selon la doc officielle RainViewer :
-     * {host}{path}/{size}/{z}/{x}/{y}/{color}/{options}.png
+     * Format URL RainViewer (API v2, 2024+) :
+     * {host}{path}/{size}/{z}/{x}/{y}/{colorScheme}/{options}
      *
-     * Zoom maximum natif de RainViewer = 7 (doc officielle).
-     * On met maxNativeZoom:7 et maxZoom:16 pour que Leaflet
-     * upscale les tiles au-delà du zoom 7 sans message d'erreur.
+     * colorScheme : 2 = classique bleu→rouge
+     * options     : 1_1_1_0 = smooth, snow, labels off
+     * Extension   : pas d'extension — l'API sert du PNG ou WebP selon Accept
+     * On force .png pour compatibilité maximale.
+     *
+     * maxNativeZoom:7 = zoom natif max de RainViewer
+     * Leaflet upscale automatiquement au-delà.
      */
-    const tileUrl = `${host}${latest.path}/256/{z}/{x}/{y}/2/1_1.png`;
+    const tileUrl = `${host}${latest.path}/512/{z}/{x}/{y}/2/1_1.png`;
 
     if (radarLayer) map.removeLayer(radarLayer);
 
@@ -961,7 +965,9 @@ async function updateRadarLayer() {
       minNativeZoom: 1,
       maxNativeZoom: 7,
       minZoom:       1,
-      maxZoom:       16
+      maxZoom:       16,
+      tileSize:      512,
+      zoomOffset:    -1
     });
 
     if (layerState.radar) radarLayer.addTo(map);
