@@ -2247,11 +2247,30 @@ async function loadLightning() {
     }
 
     /* Si on reçoit des données météo (temperature) au lieu d'éclairs = Apps Script mal routé */
-    if (raw && (Array.isArray(raw) ? raw[0] : raw).temperature !== undefined) {
+    const firstItem = Array.isArray(raw) ? raw[0] : raw;
+    if (firstItem && firstItem.temperature !== undefined) {
       console.error('[Blitz] ERREUR : Apps Script retourne les données météo au lieu de Blitzortung !');
       console.error('[Blitz] Vérifie que Apps Script v8 est bien déployé et que ?blitz=1 est dans l URL');
-      document.getElementById("lgt-status").textContent = "⚠️ Apps Script mal configuré — voir console F12";
-      document.getElementById("lgt-trend").textContent = "Redéployer Apps Script v8 avec ?blitz=1";
+      document.getElementById("lgt-status").textContent = "⚠️ Apps Script mal configuré — vérifier URL ?blitz=1";
+      document.getElementById("lgt-trend").textContent = "URL incorrecte ou Apps Script pas à jour";
+      return;
+    }
+
+    /* Tableau vide = Blitzortung répond mais pas d'éclairs dans le secteur */
+    if (!rawArr || rawArr.length === 0) {
+      console.log('[Blitz] Tableau vide — aucun éclair reçu de Blitzortung');
+      document.getElementById("lgt-status").textContent =
+        "Blitzortung OK — aucun éclair dans les 10 dernières min — " + new Date().toLocaleTimeString("fr-FR");
+      /* On garde l'historique déjà accumulé, on met juste les compteurs à jour */
+      const now2 = Date.now();
+      const c10 = lightningHistory.filter(s => now2-s.ts < 10*60*1000).length;
+      const c30 = lightningHistory.filter(s => now2-s.ts < 30*60*1000).length;
+      const c60 = lightningHistory.length;
+      document.getElementById("lgt-count10").textContent = c10;
+      document.getElementById("lgt-count30").textContent = c30;
+      document.getElementById("lgt-count60").textContent = c60;
+      if (layerState.strikes) updateStrikesOnMap(lightningHistory);
+      detectAndDrawFoci();
       return;
     }
 
