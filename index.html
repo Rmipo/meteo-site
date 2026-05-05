@@ -2256,6 +2256,13 @@ async function loadLightning() {
       return;
     }
 
+    /*
+     * Blitzortung rr_latest.json retourne un tableau d'objets :
+     * { time, lat, lon, ... } avec time en secondes unix
+     * Certains miroirs encodent lat/lon * 10 ou * 100 — on normalise.
+     */
+    const rawArr = Array.isArray(raw) ? raw : (raw.strikes || raw.data || []);
+
     /* Tableau vide = Blitzortung répond mais pas d'éclairs dans le secteur */
     if (!rawArr || rawArr.length === 0) {
       console.log('[Blitz] Tableau vide — aucun éclair reçu de Blitzortung');
@@ -2273,13 +2280,6 @@ async function loadLightning() {
       detectAndDrawFoci();
       return;
     }
-
-    /*
-     * Blitzortung rr_latest.json retourne un tableau d'objets :
-     * { time, lat, lon, ... } avec time en secondes unix
-     * Certains miroirs encodent lat/lon * 10 ou * 100 — on normalise.
-     */
-    const rawArr = Array.isArray(raw) ? raw : (raw.strikes || raw.data || []);
 
     const normalize = (v) => {
       let n = parseFloat(v);
