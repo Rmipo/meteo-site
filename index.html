@@ -346,9 +346,41 @@ tbody tr:last-child td { border-bottom:none; }
 .dp10-badge { display:inline-block; font-family:var(--mono); font-size:0.72em; padding:3px 8px; border-radius:6px; margin-top:6px; border:1px solid var(--border); color:var(--muted); transition:all 0.5s; }
 .dp10-badge.warning { border-color:#f97316; color:#f97316; }
 .dp10-badge.danger  { border-color:#ef4444; color:#ef4444; animation:blink 1s infinite; }
+
+/* ===== ENREGISTREMENT ÉPISODE ===== */
+.snap-bar {
+  display: none;
+  position: fixed; bottom: 20px; right: 20px; z-index: 9000;
+  background: var(--bg-card); border: 1px solid #f97316;
+  border-radius: 14px; padding: 12px 18px;
+  font-family: var(--mono); font-size: 0.8em;
+  box-shadow: 0 4px 24px rgba(249,115,22,0.25);
+  display: flex; flex-direction: column; gap: 8px; align-items: center;
+}
+.snap-bar.hidden { display: none !important; }
+.snap-title { color: #f97316; font-weight: 700; letter-spacing: 1px; font-size: 0.95em; }
+.snap-info  { color: var(--muted); font-size: 0.88em; }
+.snap-btns  { display: flex; gap: 8px; }
+.snap-btn {
+  font-family: var(--mono); font-size: 0.78em; padding: 6px 12px;
+  border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg-inner); color: var(--text);
+  cursor: pointer; transition: all 0.2s; letter-spacing: 1px;
+}
+.snap-btn:hover { transform: scale(1.05); }
+.snap-btn.start  { border-color: #f97316; color: #f97316; }
+.snap-btn.stop   { border-color: #ef4444; color: #ef4444; }
+.snap-btn.manual { border-color: #38bdf8; color: #38bdf8; }
+.snap-recording  { animation: blink 1.2s infinite; color: #ef4444; }
+
 </style>
 </head>
 <body>
+
+<!-- ===== BANDEAU HORS-LIGNE ESP32 ===== -->
+<div id="offline-banner">
+  ⚠️ Station physique hors ligne — dernière mesure : <span id="offline-since">--</span> — données affichées non actualisées
+</div>
 
 <h1>🌦️ Station météo
   <small>46.42964 N — 1.83906 E &nbsp;·&nbsp; Centre-Val de Loire</small>
@@ -387,6 +419,13 @@ tbody tr:last-child td { border-bottom:none; }
     <div class="bar-label-row"><span>Score intensité surface</span><span id="intensityPct">0 %</span></div>
     <div class="bar"><div class="fill" id="intensityBar"></div></div>
     <div class="dp10-badge" id="dp10-badge">ΔP 10min : calcul en cours...</div>
+  <div style="text-align:center;">
+    <div class="pression-trend-box stable" id="pression-trend-box">
+      <span class="pression-arrow" id="pression-arrow">➡️</span>
+      <span id="pression-trend-text">Pression stable</span>
+      <span class="pression-rate" id="pression-rate"></span>
+    </div>
+  </div>
   </div>
   <div class="bar-wrap">
     <div class="bar-label-row"><span>Score atmosphérique global</span><span id="globalPct">0 %</span></div>
@@ -572,6 +611,36 @@ tbody tr:last-child td { border-bottom:none; }
   <thead><tr><th>Date et heure</th><th>Température (°C)</th><th>Humidité (%)</th><th>Pression (hPa)</th></tr></thead>
   <tbody id="tableBody"></tbody>
 </table>
+
+
+<!-- ===== GRAPHIQUE PRESSION 24H ===== -->
+<h2>📉 Pression atmosphérique — 24h</h2>
+<div class="chart-wrap"><canvas id="chartPression"></canvas></div>
+
+
+<!-- ===== JOURNAL ORAGES ===== -->
+<h2>📓 Journal des épisodes météo</h2>
+<div class="journal-wrap">
+  <div class="journal-header">
+    <h3>📓 Historique épisodes</h3>
+    <span id="journal-count" style="font-family:var(--mono);font-size:0.8em;color:var(--muted);">Chargement...</span>
+  </div>
+  <div id="journal-container">
+    <div class="journal-empty">Chargement du journal...</div>
+  </div>
+</div>
+
+
+<!-- ===== BARRE ENREGISTREMENT ÉPISODE ===== -->
+<div class="snap-bar" id="snap-bar">
+  <div class="snap-title">🔴 <span id="snap-title-text">Enregistrement épisode</span></div>
+  <div class="snap-info" id="snap-info">--</div>
+  <div class="snap-btns">
+    <button class="snap-btn start"  id="snap-btn-start"  onclick="startSnapshotManual()" style="display:none">▶ Démarrer</button>
+    <button class="snap-btn stop"   id="snap-btn-stop"   onclick="stopSnapshot(true)"   style="display:none">⏹ Terminer + Analyser</button>
+    <button class="snap-btn manual" id="snap-btn-snap"   onclick="takeSnapshot()"       style="display:none">📸 Snap maintenant</button>
+  </div>
+</div>
 
 
 <script>
@@ -845,6 +914,7 @@ function computeStormActivity({ globalScore, humidity, dP, cape, shear }) {
 let surfaceData    = { last: null, prev: null, surfaceScore: 0, stormData: [], allData: [] };
 let chart24h, chart7j, chartStorm;
 let lightningHistory = [];
+window.lightningHistory = lightningHistory;
 
 /* Centroid du foyer Blitzortung — mis à jour dans loadLightning */
 let strikeCentroid = { lat: LAT, lon: LON, hasStrikes: false };
@@ -884,6 +954,7 @@ function initMap() {
 
   /* Couche radar RainViewer */
   radarLayer = null; /* initialisé dans updateRadarLayer() */
+let chartPression = null;
 
   /* Groupes de layers dynamiques */
   strikeLayerGroup = L.layerGroup().addTo(map);
@@ -1532,6 +1603,27 @@ async function loadData() {
                   '→ parseTS:', parseTS(rawData[0].timestamp),
                   '→ date:', new Date(parseTS(rawData[0].timestamp)).toLocaleString('fr-FR'));
       console.log('[loadData] Nb lignes reçues:', rawData.length);
+
+    /* ── Détection hors-ligne ESP32 ──
+     * Si la dernière mesure date de plus de 15 min, on considère la station hors-ligne.
+     * On affiche un bandeau rouge fixe en haut de page.                              */
+    if (rawData.length > 0) {
+      const lastTs  = parseTS(rawData[rawData.length - 1].timestamp);
+      const ageMin  = (Date.now() - lastTs) / 60000;
+      const banner  = document.getElementById('offline-banner');
+      const sinceEl = document.getElementById('offline-since');
+      if (ageMin > 15) {
+        const ago = ageMin > 60
+          ? Math.round(ageMin/60) + 'h ' + (Math.round(ageMin)%60) + 'min'
+          : Math.round(ageMin) + ' min';
+        if (sinceEl) sinceEl.textContent = new Date(lastTs).toLocaleString('fr-FR') + ' (il y a ' + ago + ')';
+        if (banner)  banner.style.display = 'block';
+        document.body.style.paddingTop = '42px';
+      } else {
+        if (banner)  banner.style.display = 'none';
+        document.body.style.paddingTop = '';
+      }
+    }
     }
 
     /*
@@ -1608,6 +1700,8 @@ async function loadData() {
     }
 
     buildChart24h(data);
+    buildChartPression(data);
+    updatePressionTrend(data);
 
     /* Tableau historique — 50 dernières mesures */
     const tbody = document.getElementById("tableBody");
@@ -1656,6 +1750,146 @@ function buildChart7j(data) {
     ]},
     options: { ...darkOpts, scales: { ...darkOpts.scales, y: optsY } }
   });
+}
+
+
+/* ============================================================
+   GRAPHIQUE PRESSION 24H
+   Affiche la courbe de pression sur les dernières 24h
+   avec une ligne de référence et une zone colorée selon la tendance.
+   ============================================================ */
+function buildChartPression(allData) {
+  /* Filtrer les 24 dernières heures */
+  const cutoff = Date.now() - 24 * 3600 * 1000;
+  const pts = allData
+    .filter(r => r.pressure !== null && r.pressure !== undefined)
+    .map(r => ({ ts: parseTS(r.timestamp), pres: parseFloat(r.pressure) }))
+    .filter(p => !isNaN(p.pres) && p.ts >= cutoff)
+    .sort((a,b) => a.ts - b.ts);
+
+  if (pts.length < 2) return;
+
+  /* Bins de 15 min pour lisser */
+  const BIN = 15 * 60 * 1000;
+  const start = Math.floor(pts[0].ts / BIN) * BIN;
+  const end   = Math.ceil(pts[pts.length-1].ts / BIN) * BIN;
+  const binned = [];
+  for (let t = start; t <= end; t += BIN) {
+    const group = pts.filter(p => p.ts >= t && p.ts < t + BIN);
+    if (group.length) {
+      binned.push({
+        label: new Date(t).toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' }),
+        val:   group.reduce((s,p) => s + p.pres, 0) / group.length
+      });
+    }
+  }
+  if (binned.length < 2) return;
+
+  /* Couleur du segment : rouge si baisse > 0.5 hPa/bin, vert si hausse */
+  const colors = binned.map((b, i) => {
+    if (i === 0) return '#38bdf8';
+    const diff = binned[i-1].val - b.val;
+    if (diff > 0.5) return '#ef4444';
+    if (diff < -0.3) return '#22c55e';
+    return '#38bdf8';
+  });
+
+  if (chartPression) chartPression.destroy();
+  chartPression = new Chart(document.getElementById('chartPression'), {
+    type: 'line',
+    data: {
+      labels: binned.map(b => b.label),
+      datasets: [{
+        label: 'Pression (hPa)',
+        data: binned.map(b => b.val),
+        borderColor: '#38bdf8',
+        borderWidth: 2.5,
+        tension: 0.4,
+        pointRadius: 2,
+        fill: {
+          target: 'origin',
+          above: 'rgba(56,189,248,0.07)'
+        },
+        segment: {
+          borderColor: ctx => {
+            const i = ctx.p1DataIndex;
+            return colors[i] || '#38bdf8';
+          }
+        }
+      }]
+    },
+    options: {
+      ...darkOpts,
+      plugins: {
+        ...darkOpts.plugins,
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.raw.toFixed(1) + ' hPa'
+          }
+        }
+      },
+      scales: {
+        ...darkOpts.scales,
+        y: {
+          ticks: {
+            color: '#64748b',
+            font: { family: "'Share Tech Mono'" },
+            callback: v => v.toFixed(0) + ' hPa'
+          },
+          grid: { color: '#1e3a5f' }
+        }
+      }
+    }
+  });
+}
+
+/* ============================================================
+   TENDANCE PRESSION — indicateur flèche sur le dashboard
+   Met à jour l'indicateur de tendance pression en hPa/h
+   basé sur les données des 60 dernières minutes.
+   ============================================================ */
+function updatePressionTrend(allData) {
+  const box      = document.getElementById('pression-trend-box');
+  const arrow    = document.getElementById('pression-arrow');
+  const textEl   = document.getElementById('pression-trend-text');
+  const rateEl   = document.getElementById('pression-rate');
+  if (!box) return;
+
+  const now = Date.now();
+  const pts = allData
+    .filter(r => r.pressure !== null)
+    .map(r => ({ ts: parseTS(r.timestamp), pres: parseFloat(r.pressure) }))
+    .filter(p => !isNaN(p.pres) && (now - p.ts) < 70 * 60 * 1000)
+    .sort((a,b) => a.ts - b.ts);
+
+  if (pts.length < 3) {
+    textEl.textContent = 'Données insuffisantes';
+    rateEl.textContent = '';
+    return;
+  }
+
+  const newest = pts[pts.length - 1];
+  const oldest = pts[0];
+  const dtH    = (newest.ts - oldest.ts) / 3600000; /* heures */
+  if (dtH < 0.1) return;
+
+  const ratePerH = (oldest.pres - newest.pres) / dtH; /* positif = baisse */
+
+  let cls, arrowChar, label;
+  if (ratePerH >= 3.0) {
+    cls = 'chute';    arrowChar = '⬇️'; label = 'Chute rapide ⚠️';
+  } else if (ratePerH >= 1.5) {
+    cls = 'baisse';   arrowChar = '↘️'; label = 'Baisse modérée';
+  } else if (ratePerH <= -1.5) {
+    cls = 'hausse';   arrowChar = '↗️'; label = 'Hausse (stabilisation)';
+  } else {
+    cls = 'stable';   arrowChar = '➡️'; label = 'Pression stable';
+  }
+
+  box.className      = 'pression-trend-box ' + cls;
+  arrow.textContent  = arrowChar;
+  textEl.textContent = label;
+  rateEl.textContent = (ratePerH >= 0 ? '−' : '+') + Math.abs(ratePerH).toFixed(1) + ' hPa/h';
 }
 
 /* ============================================================
@@ -2145,7 +2379,8 @@ async function loadUpperAtmosphere() {
       closeEpisodePanel();
     }
 
-    console.log(`[Atmo] Score: ${globalScoreV2} | Conv: ${convScore} | Surface: ${surfaceScore} | Shear: ${shearScore} | GustFront: +${gustFrontBonus} | Vent: ${avgSpeed.toFixed(1)}km/h → ${correctedMoveDeg.toFixed(0)}°`);
+    checkAutoSnapshot(globalScore);
+  console.log(`[Atmo] Score: ${globalScoreV2} | Conv: ${convScore} | Surface: ${surfaceScore} | Shear: ${shearScore} | GustFront: +${gustFrontBonus} | Vent: ${avgSpeed.toFixed(1)}km/h → ${correctedMoveDeg.toFixed(0)}°`);
 
   } catch(err) { console.error("Erreur loadUpperAtmosphere:", err); }
 }
@@ -2461,7 +2696,272 @@ async function loadNowcast() {
 /* ============================================================
    DÉMARRAGE
    ============================================================ */
+
+
+/* ============================================================
+   SNAPSHOT ÉPISODE
+   Enregistre toutes les 10 min pendant un épisode :
+   - Positions des éclairs Blitzortung dans 100 km
+   - Vents altitude Open-Meteo
+   - Score IA courant
+   - Pixel radar
+   Déclenchement auto (score > 30) ou manuel.
+   En fin d'épisode : envoi vers Railway pour analyse Claude API.
+   ============================================================ */
+
+const snapshots       = [];   /* tableau de snapshots de l'épisode en cours */
+let   snapInterval    = null; /* setInterval du snapshot auto */
+let   snapActive      = false;
+let   snapStartTime   = null;
+const SNAP_INTERVAL   = 10 * 60 * 1000; /* 10 min */
+const SNAP_SCORE_SEUIL = 30;            /* score > 30 = déclenchement auto */
+
+/* ── Démarrage automatique (appelé depuis loadUpperAtmosphere) ── */
+function checkAutoSnapshot(score) {
+  if (snapActive) return; /* déjà en cours */
+  if (score >= SNAP_SCORE_SEUIL) {
+    console.log('[Snap] Déclenchement auto — score=' + score);
+    startSnapshot('auto');
+  }
+}
+
+/* ── Démarrage manuel (bouton) ── */
+function startSnapshotManual() {
+  startSnapshot('manuel');
+}
+
+function startSnapshot(mode) {
+  if (snapActive) return;
+  snapActive    = true;
+  snapStartTime = Date.now();
+  snapshots.length = 0; /* vider les anciens */
+
+  /* Afficher la barre */
+  const bar = document.getElementById('snap-bar');
+  if (bar) bar.classList.remove('hidden');
+  updateSnapBar();
+
+  /* Premier snap immédiat */
+  takeSnapshot();
+
+  /* Snap toutes les 10 min */
+  snapInterval = setInterval(() => {
+    takeSnapshot();
+    updateSnapBar();
+  }, SNAP_INTERVAL);
+
+  console.log('[Snap] Enregistrement démarré (' + mode + ')');
+}
+
+/* ── Prendre un snapshot ── */
+function takeSnapshot() {
+  if (!snapActive) return;
+
+  /* Éclairs en mémoire dans lightningHistory */
+  const now     = Date.now();
+  const strikes = (window.lightningHistory || [])
+    .filter(s => (now - s.ts) < 60 * 60 * 1000)
+    .map(s => ({ lat: s.lat, lon: s.lon, ts: s.ts, dist: s.dist }));
+
+  /* Score courant */
+  const scoreEl = document.getElementById('intensityPct');
+  const score   = scoreEl ? parseInt(scoreEl.textContent) || 0 : 0;
+
+  /* Vents (lire depuis les éléments affichés) */
+  const windEl  = document.getElementById('stormVector');
+  const wind    = windEl ? windEl.textContent : '';
+  const etaEl   = document.getElementById('stormETA');
+  const eta     = etaEl  ? etaEl.textContent  : '';
+
+  /* Pixel radar */
+  const pxNow   = document.getElementById('px-now')  ? document.getElementById('px-now').textContent  : '--';
+  const px10    = document.getElementById('px-10')   ? document.getElementById('px-10').textContent   : '--';
+
+  /* Pression + tendance */
+  const presEl  = document.getElementById('pres');
+  const pres    = presEl ? presEl.textContent : '--';
+  const trendEl = document.getElementById('pression-trend-text');
+  const trend   = trendEl ? trendEl.textContent : '--';
+  const rateEl  = document.getElementById('pression-rate');
+  const rate    = rateEl  ? rateEl.textContent  : '';
+
+  const snap = {
+    ts:       now,
+    time:     new Date(now).toLocaleTimeString('fr-FR'),
+    score,
+    strikes:  strikes.length,
+    strikes_data: strikes.slice(0, 50), /* max 50 positions */
+    wind,
+    eta,
+    px_now:   pxNow,
+    px_10:    px10,
+    pression: pres,
+    pression_trend: trend + ' ' + rate
+  };
+
+  snapshots.push(snap);
+  console.log('[Snap] Snapshot #' + snapshots.length + ' — ' + strikes.length + ' éclairs | score=' + score);
+  updateSnapBar();
+}
+
+/* ── Arrêter et envoyer pour analyse ── */
+async function stopSnapshot(sendForAnalysis) {
+  if (!snapInterval) return;
+  clearInterval(snapInterval);
+  snapInterval = null;
+
+  /* Dernier snap avant fermeture */
+  takeSnapshot();
+
+  const bar = document.getElementById('snap-bar');
+  if (bar) bar.classList.add('hidden');
+
+  snapActive = false;
+
+  if (!sendForAnalysis || !snapshots.length) return;
+
+  const duration = Math.round((Date.now() - snapStartTime) / 60000);
+  console.log('[Snap] Envoi ' + snapshots.length + ' snapshots pour analyse (durée=' + duration + 'min)');
+
+  /* Envoyer au bot Railway pour analyse Claude */
+  try {
+    const payload = JSON.stringify({
+      episode_start: new Date(snapStartTime).toISOString(),
+      duration_min:  duration,
+      snapshots:     snapshots,
+      station:       { lat: LAT, lon: LON }
+    });
+
+    const res = await fetch(RAILWAY_URL + '/analyze', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    payload
+    });
+
+    if (res.ok) {
+      console.log('[Snap] Envoyé au bot Railway pour analyse');
+    } else {
+      console.warn('[Snap] Erreur Railway:', res.status);
+    }
+  } catch(err) {
+    console.error('[Snap] Erreur envoi:', err.message);
+  }
+}
+
+/* ── Mettre à jour la barre d'état ── */
+function updateSnapBar() {
+  const bar      = document.getElementById('snap-bar');
+  const info     = document.getElementById('snap-info');
+  const btnStart = document.getElementById('snap-btn-start');
+  const btnStop  = document.getElementById('snap-btn-stop');
+  const btnSnap  = document.getElementById('snap-btn-snap');
+  const titleEl  = document.getElementById('snap-title-text');
+  if (!bar) return;
+
+  if (snapActive) {
+    bar.classList.remove('hidden');
+    bar.style.display = 'flex';
+    if (titleEl) titleEl.innerHTML = '<span class="snap-recording">●</span> Enregistrement en cours';
+    const dur = Math.round((Date.now() - snapStartTime) / 60000);
+    if (info) info.textContent = snapshots.length + ' snapshots — ' + dur + ' min — prochain dans ' +
+      Math.round(SNAP_INTERVAL / 60000) + ' min';
+    if (btnStart) btnStart.style.display = 'none';
+    if (btnStop)  btnStop.style.display  = 'inline-block';
+    if (btnSnap)  btnSnap.style.display  = 'inline-block';
+  } else {
+    /* Montrer le bouton de démarrage manuel */
+    bar.style.display = 'flex';
+    if (titleEl) titleEl.textContent = 'Enregistrement épisode';
+    if (info)    info.textContent    = 'Démarrage manuel ou auto (score > ' + SNAP_SCORE_SEUIL + ')';
+    if (btnStart) btnStart.style.display = 'inline-block';
+    if (btnStop)  btnStop.style.display  = 'none';
+    if (btnSnap)  btnSnap.style.display  = 'none';
+  }
+}
+
+/* ============================================================
+   JOURNAL ORAGES
+   Charge les épisodes depuis l'onglet Episodes du Sheet
+   et les affiche dans un tableau avec verdict, score, éclairs.
+   ============================================================ */
+async function loadJournal() {
+  const container = document.getElementById('journal-container');
+  const countEl   = document.getElementById('journal-count');
+  if (!container) return;
+
+  try {
+    const res  = await fetch(SHEETS_URL + '?action=getEpisodes');
+    const data = await res.json();
+    const eps  = (data.episodes || []).slice().reverse(); /* plus récent en premier */
+
+    if (!eps.length) {
+      container.innerHTML = '<div class="journal-empty">Aucun épisode enregistré — les épisodes apparaîtront ici après validation.</div>';
+      if (countEl) countEl.textContent = '0 épisode';
+      return;
+    }
+
+    if (countEl) countEl.textContent = eps.length + ' épisode' + (eps.length > 1 ? 's' : '');
+
+    const rows = eps.map(ep => {
+      const d    = ep.start_ts ? new Date(ep.start_ts) : null;
+      const date = d ? d.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' }) : '--';
+      const time = d ? d.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' }) : '--';
+
+      /* Badge verdict */
+      let badge = '<span class="badge-attente">⏳ En attente</span>';
+      if (ep.orage_reel === true) {
+        if (ep.grele)               badge = '<span class="badge-grele">🧊 Grêle</span>';
+        else if (ep.intensite >= 4) badge = '<span class="badge-fort">⚡ Orage fort</span>';
+        else                        badge = '<span class="badge-orage">⛈️ Orage</span>';
+      } else if (ep.orage_reel === false && ep.intensite === 0) {
+        badge = '<span class="badge-faux">❌ Fausse alerte</span>';
+      } else if (ep.orage_reel === false) {
+        badge = '<span class="badge-pluie">🌧️ Pluie</span>';
+      }
+
+      /* Score mini bar */
+      const score    = Math.round(ep.score_final || 0);
+      const barColor = score >= 70 ? '#ef4444' : score >= 40 ? '#f97316' : score >= 20 ? '#eab308' : '#22c55e';
+      const scoreBadge = `${score}%
+        <span class="score-bar-mini">
+          <span class="score-bar-mini-fill" style="width:${score}%;background:${barColor}"></span>
+        </span>`;
+
+      /* Éclairs AS3935 */
+      const eclairs = ep.dist_as3935 > 0
+        ? `${ep.dist_as3935.toFixed(0)} km`
+        : '--';
+
+      return `<tr>
+        <td>${date}<br><span style="color:var(--muted);font-size:0.85em">${time}</span></td>
+        <td>${badge}</td>
+        <td>${scoreBadge}</td>
+        <td>${eclairs}</td>
+        <td style="color:var(--muted)">${ep.intensite ? '⭐'.repeat(Math.min(5, ep.intensite)) : '--'}</td>
+      </tr>`;
+    }).join('');
+
+    container.innerHTML = `<table class="journal-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Verdict</th>
+          <th>Score IA</th>
+          <th>Plus proche AS3935</th>
+          <th>Intensité</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+
+  } catch(err) {
+    console.warn('[Journal] Erreur:', err);
+    container.innerHTML = '<div class="journal-empty">Erreur chargement journal — ' + err.message + '</div>';
+  }
+}
+
 async function init() {
+  updateSnapBar(); /* afficher le bouton de démarrage dès le chargement */
   initMap();
   await loadData();
   await loadUpperAtmosphere();
@@ -2469,6 +2969,7 @@ async function init() {
   await loadLightning();
   await loadWindSol();
   await loadPixelTracking();
+  await loadJournal(); /* journal orages */
 }
 
 init();
@@ -2481,6 +2982,9 @@ setInterval(async () => {
 
 /* Open-Meteo toutes les 5 min */
 setInterval(loadUpperAtmosphere, 300000);
+
+/* Journal orages toutes les 5 min */
+setInterval(loadJournal, 300000);
 
 /* Éclairs toutes les 60 s */
 setInterval(loadLightning, 60000);
