@@ -2380,7 +2380,7 @@ async function loadUpperAtmosphere() {
       closeEpisodePanel();
     }
 
-    checkAutoSnapshot(globalScore);
+    checkAutoSnapshot(globalScoreV2);
   console.log(`[Atmo] Score: ${globalScoreV2} | Conv: ${convScore} | Surface: ${surfaceScore} | Shear: ${shearScore} | GustFront: +${gustFrontBonus} | Vent: ${avgSpeed.toFixed(1)}km/h → ${correctedMoveDeg.toFixed(0)}°`);
 
   } catch(err) { console.error("Erreur loadUpperAtmosphere:", err); }
@@ -2473,10 +2473,15 @@ async function loadLightning() {
     return;
   }
   try {
-    const res     = await fetch(BLITZORTUNG_PROXY_URL);
-    const now     = Date.now();
+    /*
+     * On utilise Open-Meteo Lightning API — gratuit, pas de CORS, données GLD360/ATDnet
+     * Retourne les éclairs de la dernière heure dans un rayon étendu
+     * URL : https://api.open-meteo.com/v1/lightning?latitude=LAT&longitude=LON&past_hours=1
+     */
+    const lightningUrl = `https://api.open-meteo.com/v1/lightning?latitude=${LAT}&longitude=${LON}&past_hours=1`;
+    const res  = await fetch(lightningUrl);
+    const now  = Date.now();
 
-    /* Diagnostic — log ce qu'on reçoit vraiment */
     const rawText = await res.text();
     console.log('[Blitz] HTTP:', res.status, '| Reçu (100c):', rawText.substring(0, 100));
 
@@ -2484,73 +2489,65 @@ async function loadLightning() {
     try { raw = JSON.parse(rawText); }
     catch(e) {
       console.error('[Blitz] JSON invalide:', rawText.substring(0, 200));
-      document.getElementById("lgt-status").textContent = "Erreur JSON Blitzortung — voir console";
-      return;
-    }
-
-    /* Si on reçoit des données météo (temperature) au lieu d'éclairs = Apps Script mal routé */
-    const firstItem = Array.isArray(raw) ? raw[0] : raw;
-    if (firstItem && firstItem.temperature !== undefined) {
-      console.error('[Blitz] ERREUR : Apps Script retourne les données météo au lieu de Blitzortung !');
-      console.error('[Blitz] Vérifie que Apps Script v8 est bien déployé et que ?blitz=1 est dans l URL');
-      document.getElementById("lgt-status").textContent = "⚠️ Apps Script mal configuré — vérifier URL ?blitz=1";
-      document.getElementById("lgt-trend").textContent = "URL incorrecte ou Apps Script pas à jour";
+      document.getElementById("lgt-status").textContent = "Erreur JSON Open-Meteo Lightning";
       return;
     }
 
     /*
-     * Blitzortung rr_latest.json retourne un tableau d'objets :
-     * { time, lat, lon, ... } avec time en secondes unix
-     * Certains miroirs encodent lat/lon * 10 ou * 100 — on normalise.
+     * Format Open-Meteo Lightning :
+     * { lightning: { time: [...ISO strings], lightning_potential: [...] } }
+     * Ou selon version : { time:[...], latitude:[...], longitude:[...] }
+     * On gère les deux formats.
      */
-    const rawArr = Array.isArray(raw) ? raw : (raw.strikes || raw.data || []);
+    let strikes = [];
 
-    /* Tableau vide = Blitzortung répond mais pas d'éclairs dans le secteur */
-    if (!rawArr || rawArr.length === 0) {
-      console.log('[Blitz] Tableau vide — aucun éclair reçu de Blitzortung');
-      document.getElementById("lgt-status").textContent =
-        "Blitzortung OK — aucun éclair dans les 10 dernières min — " + new Date().toLocaleTimeString("fr-FR");
-      /* On garde l'historique déjà accumulé, on met juste les compteurs à jour */
-      const now2 = Date.now();
-      const c10 = lightningHistory.filter(s => now2-s.ts < 10*60*1000).length;
-      const c30 = lightningHistory.filter(s => now2-s.ts < 30*60*1000).length;
-      const c60 = lightningHistory.length;
-      document.getElementById("lgt-count10").textContent = c10;
-      document.getElementById("lgt-count30").textContent = c30;
-      document.getElementById("lgt-count60").textContent = c60;
-      if (layerState.strikes) updateStrikesOnMap(lightningHistory);
-      detectAndDrawFoci();
-      return;
+    if (raw.lightning && Array.isArray(raw.lightning.time)) {
+      /* Format avec tableau de timestamps + potentiel */
+      const times = raw.lightning.time;
+      const lats  = raw.lightning.latitude  || [];
+      const lons  = raw.lightning.longitude || [];
+      for (let i = 0; i < times.length; i++) {
+        const ts = new Date(times[i]).getTime();
+        const lt = parseFloat(lats[i]);
+        const ln = parseFloat(lons[i]);
+        if (!isNaN(lt) && !isNaN(ln) && !isNaN(ts)) {
+          strikes.push({ lat: lt, lon: ln, ts });
+        }
+      }
+    } else if (Array.isArray(raw)) {
+      /* Format tableau direct */
+      strikes = raw
+        .filter(s => s && s.lat !== undefined)
+        .map(s => ({
+          lat: parseFloat(s.lat),
+          lon: parseFloat(s.lon || s.longitude),
+          ts:  (() => {
+            const t = parseFloat(s.time || s.timestamp || 0);
+            if (t > 1e15) return t / 1e6;
+            if (t > 1e12) return t;
+            return t * 1000;
+          })()
+        }))
+        .filter(s => !isNaN(s.lat) && !isNaN(s.lon));
+    } else if (raw.time && Array.isArray(raw.time)) {
+      /* Format colonnes */
+      const lats = raw.latitude  || [];
+      const lons = raw.longitude || [];
+      raw.time.forEach((t, i) => {
+        const ts = new Date(t).getTime();
+        const lt = parseFloat(lats[i]);
+        const ln = parseFloat(lons[i]);
+        if (!isNaN(lt) && !isNaN(ln) && !isNaN(ts)) {
+          strikes.push({ lat: lt, lon: ln, ts });
+        }
+      });
     }
 
-    const normalize = (v) => {
-      let n = parseFloat(v);
-      while (Math.abs(n) > 90 && n !== 0) n = n / 10;
-      return n;
-    };
-    const normalizeLon = (v) => {
-      let n = parseFloat(v);
-      while (Math.abs(n) > 180 && n !== 0) n = n / 10;
-      return n;
-    };
+    console.log('[Blitz] Éclairs parsés:', strikes.length, '| Exemples:', JSON.stringify(strikes.slice(0,2)));
 
-    const strikes = rawArr
-      .filter(s => s && (s.lat !== undefined || s.latitude !== undefined))
-      .map(s => ({
-        lat: normalize(s.lat !== undefined ? s.lat : s.latitude),
-        lon: normalizeLon(s.lon !== undefined ? s.lon : (s.lng !== undefined ? s.lng : s.longitude)),
-        ts:  (() => {
-          /* Blitzortung encode time en secondes, ms, ou nanosecondes selon la version */
-          const raw = parseFloat(s.time !== undefined ? s.time : (s.timestamp || 0));
-          if (raw > 1e15) return raw / 1e6;   /* nanosecondes → ms */
-          if (raw > 1e12) return raw;          /* déjà en ms */
-          return raw * 1000;                   /* secondes → ms */
-        })()
-      }))
-      .filter(s => !isNaN(s.lat) && !isNaN(s.lon) && !isNaN(s.ts)
-                   && Math.abs(s.lat) <= 90 && Math.abs(s.lon) <= 180);
-
+    /* Filtrer : dans les 60 dernières minutes et dans le rayon */
     const nearby = strikes
+      .filter(s => (now - s.ts) < 60 * 60 * 1000)
       .map(s => ({ ...s, dist: haversine(LAT, LON, s.lat, s.lon) }))
       .filter(s => s.dist <= RAYON_KM)
       .sort((a,b) => a.dist - b.dist);
