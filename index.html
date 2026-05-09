@@ -592,6 +592,12 @@ tbody tr:last-child td { border-bottom:none; }
 <h2 id="chart24h-title">📈 Température — aujourd'hui (moyenne 15 min)</h2>
 <div class="chart-wrap"><canvas id="chart24h"></canvas></div>
 
+<!-- ===== GRAPHIQUE PRESSION 24H ===== -->
+<h2>📉 Pression atmosphérique — 24h</h2>
+<div class="chart-wrap"><canvas id="chartPression"></canvas></div>
+
+
+
 
 <!-- ===== GRAPHIQUE 7 JOURS ===== -->
 <h2>📊 Température — 7 derniers jours (min / moy / max)</h2>
@@ -611,11 +617,6 @@ tbody tr:last-child td { border-bottom:none; }
   <thead><tr><th>Date et heure</th><th>Température (°C)</th><th>Humidité (%)</th><th>Pression (hPa)</th></tr></thead>
   <tbody id="tableBody"></tbody>
 </table>
-
-
-<!-- ===== GRAPHIQUE PRESSION 24H ===== -->
-<h2>📉 Pression atmosphérique — 24h</h2>
-<div class="chart-wrap"><canvas id="chartPression"></canvas></div>
 
 
 <!-- ===== JOURNAL ORAGES ===== -->
@@ -2538,7 +2539,13 @@ async function loadLightning() {
       .map(s => ({
         lat: normalize(s.lat !== undefined ? s.lat : s.latitude),
         lon: normalizeLon(s.lon !== undefined ? s.lon : (s.lng !== undefined ? s.lng : s.longitude)),
-        ts:  (s.time !== undefined ? parseFloat(s.time) : parseFloat(s.timestamp)) * 1000
+        ts:  (() => {
+          /* Blitzortung encode time en secondes, ms, ou nanosecondes selon la version */
+          const raw = parseFloat(s.time !== undefined ? s.time : (s.timestamp || 0));
+          if (raw > 1e15) return raw / 1e6;   /* nanosecondes → ms */
+          if (raw > 1e12) return raw;          /* déjà en ms */
+          return raw * 1000;                   /* secondes → ms */
+        })()
       }))
       .filter(s => !isNaN(s.lat) && !isNaN(s.lon) && !isNaN(s.ts)
                    && Math.abs(s.lat) <= 90 && Math.abs(s.lon) <= 180);
@@ -2822,6 +2829,42 @@ async function stopSnapshot(sendForAnalysis) {
 
   const duration = Math.round((Date.now() - snapStartTime) / 60000);
   console.log('[Snap] Envoi ' + snapshots.length + ' snapshots pour analyse (durée=' + duration + 'min)');
+
+  /* Sauvegarder l'épisode dans le Sheet Episodes pour le Journal */
+  try {
+    const lastSnap   = snapshots[snapshots.length - 1] || {};
+    const maxScore   = Math.max(...snapshots.map(s => s.score || 0));
+    const maxStrikes = Math.max(...snapshots.map(s => s.strikes || 0));
+    const episodeData = {
+      id:              snapStartTime,
+      start_ts:        new Date(snapStartTime).toISOString(),
+      dist_as3935:     -1,
+      energy:          0,
+      score_pression:  0,
+      score_convectif: 0,
+      score_approche:  0,
+      score_jump:      0,
+      score_nowcast:   maxStrikes,
+      score_rosee:     0,
+      pixel_now:       parseInt(lastSnap.px_now) || 0,
+      pixel_10m:       parseInt(lastSnap.px_10)  || 0,
+      score_final:     maxScore,
+      orage_reel:      maxStrikes > 0 || maxScore >= 40,
+      intensite:       maxScore >= 70 ? 4 : maxScore >= 50 ? 3 : maxScore >= 30 ? 2 : 1,
+      grele:           false,
+      confirmed_auto:  true
+    };
+    await fetch(SHEETS_URL + '?action=saveEpisode', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(episodeData)
+    });
+    console.log('[Snap] Épisode sauvegardé dans le Sheet');
+    /* Recharger le journal */
+    setTimeout(loadJournal, 2000);
+  } catch(saveErr) {
+    console.warn('[Snap] Erreur sauvegarde Sheet:', saveErr.message);
+  }
 
   /* Envoyer au bot Railway pour analyse Claude */
   try {
