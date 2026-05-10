@@ -2478,9 +2478,18 @@ async function loadLightning() {
      * Retourne les éclairs de la dernière heure dans un rayon étendu
      * URL : https://api.open-meteo.com/v1/lightning?latitude=LAT&longitude=LON&past_hours=1
      */
-    const lightningUrl = `https://api.open-meteo.com/v1/lightning?latitude=${LAT}&longitude=${LON}&past_hours=1`;
-    const res  = await fetch(lightningUrl);
-    const now  = Date.now();
+    /*
+     * Les éclairs viennent maintenant du bot Railway qui maintient
+     * une connexion WebSocket permanente à Blitzortung.
+     * Le bot stocke les éclairs 60 min en mémoire et les expose via /lightning.
+     */
+    if (!RAILWAY_URL) {
+      document.getElementById("lgt-status").textContent = "⚠️ RAILWAY_URL non configuré";
+      return;
+    }
+
+    const res = await fetch(RAILWAY_URL + '/lightning');
+    const now = Date.now();
 
     const rawText = await res.text();
     console.log('[Blitz] HTTP:', res.status, '| Reçu (100c):', rawText.substring(0, 100));
@@ -2489,65 +2498,16 @@ async function loadLightning() {
     try { raw = JSON.parse(rawText); }
     catch(e) {
       console.error('[Blitz] JSON invalide:', rawText.substring(0, 200));
-      document.getElementById("lgt-status").textContent = "Erreur JSON Open-Meteo Lightning";
+      document.getElementById("lgt-status").textContent = "Erreur JSON /lightning";
       return;
     }
 
-    /*
-     * Format Open-Meteo Lightning :
-     * { lightning: { time: [...ISO strings], lightning_potential: [...] } }
-     * Ou selon version : { time:[...], latitude:[...], longitude:[...] }
-     * On gère les deux formats.
-     */
-    let strikes = [];
+    /* Format : { count, updated, strikes: [{lat, lon, ts}] } */
+    const allStrikes = raw.strikes || [];
+    console.log('[Blitz] Éclairs reçus du bot:', allStrikes.length);
 
-    if (raw.lightning && Array.isArray(raw.lightning.time)) {
-      /* Format avec tableau de timestamps + potentiel */
-      const times = raw.lightning.time;
-      const lats  = raw.lightning.latitude  || [];
-      const lons  = raw.lightning.longitude || [];
-      for (let i = 0; i < times.length; i++) {
-        const ts = new Date(times[i]).getTime();
-        const lt = parseFloat(lats[i]);
-        const ln = parseFloat(lons[i]);
-        if (!isNaN(lt) && !isNaN(ln) && !isNaN(ts)) {
-          strikes.push({ lat: lt, lon: ln, ts });
-        }
-      }
-    } else if (Array.isArray(raw)) {
-      /* Format tableau direct */
-      strikes = raw
-        .filter(s => s && s.lat !== undefined)
-        .map(s => ({
-          lat: parseFloat(s.lat),
-          lon: parseFloat(s.lon || s.longitude),
-          ts:  (() => {
-            const t = parseFloat(s.time || s.timestamp || 0);
-            if (t > 1e15) return t / 1e6;
-            if (t > 1e12) return t;
-            return t * 1000;
-          })()
-        }))
-        .filter(s => !isNaN(s.lat) && !isNaN(s.lon));
-    } else if (raw.time && Array.isArray(raw.time)) {
-      /* Format colonnes */
-      const lats = raw.latitude  || [];
-      const lons = raw.longitude || [];
-      raw.time.forEach((t, i) => {
-        const ts = new Date(t).getTime();
-        const lt = parseFloat(lats[i]);
-        const ln = parseFloat(lons[i]);
-        if (!isNaN(lt) && !isNaN(ln) && !isNaN(ts)) {
-          strikes.push({ lat: lt, lon: ln, ts });
-        }
-      });
-    }
-
-    console.log('[Blitz] Éclairs parsés:', strikes.length, '| Exemples:', JSON.stringify(strikes.slice(0,2)));
-
-    /* Filtrer : dans les 60 dernières minutes et dans le rayon */
-    const nearby = strikes
-      .filter(s => (now - s.ts) < 60 * 60 * 1000)
+    /* Filtrer dans le rayon RAYON_KM */
+    const nearby = allStrikes
       .map(s => ({ ...s, dist: haversine(LAT, LON, s.lat, s.lon) }))
       .filter(s => s.dist <= RAYON_KM)
       .sort((a,b) => a.dist - b.dist);
