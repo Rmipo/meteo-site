@@ -527,17 +527,38 @@ tbody tr:last-child td { border-bottom:none; }
   <div class="episode-status" id="episode-status">Tap pour valider cet épisode</div>
 </div>
 
-<!-- ===== BLOC ÉCLAIRS BLITZORTUNG ===== -->
+<!-- ===== BLOC ÉCLAIRS ===== -->
 <div class="lightning-box">
-  <div class="lightning-title">⚡ Activité électrique — 100 km</div>
+  <div class="lightning-title">⚡ Activité électrique</div>
+
+  <!-- Compteurs AS3935 local -->
   <div class="lightning-grid">
-    <div class="lightning-item"><div class="l-name">Plus proche</div><div class="l-val" id="lgt-closest">--</div><div class="l-sub" id="lgt-closest-time">--</div></div>
-    <div class="lightning-item"><div class="l-name">Éclairs 10 min</div><div class="l-val" id="lgt-count10">--</div><div class="l-sub">dans 100 km</div></div>
-    <div class="lightning-item"><div class="l-name">Éclairs 30 min</div><div class="l-val" id="lgt-count30">--</div><div class="l-sub">dans 100 km</div></div>
-    <div class="lightning-item"><div class="l-name">Éclairs 60 min</div><div class="l-val" id="lgt-count60">--</div><div class="l-sub">dans 100 km</div></div>
+    <div class="lightning-item"><div class="l-name">Plus proche AS3935</div><div class="l-val" id="lgt-closest">--</div><div class="l-sub" id="lgt-closest-time">capteur local</div></div>
+    <div class="lightning-item"><div class="l-name">Éclairs 10 min</div><div class="l-val" id="lgt-count10">--</div><div class="l-sub">AS3935 local</div></div>
+    <div class="lightning-item"><div class="l-name">Éclairs 30 min</div><div class="l-val" id="lgt-count30">--</div><div class="l-sub">AS3935 local</div></div>
+    <div class="lightning-item"><div class="l-name">Éclairs 60 min</div><div class="l-val" id="lgt-count60">--</div><div class="l-sub">AS3935 local</div></div>
   </div>
   <div class="lightning-trend" id="lgt-trend">Tendance : Chargement...</div>
-  <div style="font-size:0.72em; color:var(--muted); margin-top:6px;" id="lgt-status">Source : Blitzortung.org — actualisation 60 s</div>
+  <div style="font-size:0.72em; color:var(--muted); margin-top:6px;" id="lgt-status">Capteur AS3935 local</div>
+
+  <!-- Carte Blitzortung temps réel centrée sur la station -->
+  <div style="margin-top:16px;">
+    <div style="font-family:var(--mono);font-size:0.78em;color:var(--muted);margin-bottom:8px;">
+      ⚡ Carte éclairs temps réel — Blitzortung.org
+    </div>
+    <iframe
+      id="blitz-iframe"
+      src="https://www.blitzortung.org/en/live_lightning_maps.php?map=europe"
+      width="100%" height="420"
+      style="border:1px solid var(--border);border-radius:10px;background:#0a1628;"
+      allowfullscreen
+      loading="lazy"
+      title="Carte éclairs Blitzortung">
+    </iframe>
+    <div style="font-family:var(--mono);font-size:0.7em;color:var(--muted);margin-top:5px;text-align:right;">
+      Données : Blitzortung.org — réseau communautaire mondial
+    </div>
+  </div>
 </div>
 
 
@@ -2479,37 +2500,15 @@ async function loadLightning() {
      * URL : https://api.open-meteo.com/v1/lightning?latitude=LAT&longitude=LON&past_hours=1
      */
     /*
-     * Les éclairs viennent maintenant du bot Railway qui maintient
-     * une connexion WebSocket permanente à Blitzortung.
-     * Le bot stocke les éclairs 60 min en mémoire et les expose via /lightning.
+     * Blitzortung n'expose plus d'API publique accessible depuis un serveur.
+     * Les compteurs d'éclairs sont basés sur le capteur AS3935 local.
+     * La carte Blitzortung temps réel est affichée en iframe.
+     * On met juste à jour les compteurs depuis lightningHistory (AS3935).
      */
-    if (!RAILWAY_URL) {
-      document.getElementById("lgt-status").textContent = "⚠️ RAILWAY_URL non configuré";
-      return;
-    }
-
-    const res = await fetch(RAILWAY_URL + '/lightning');
-    const now = Date.now();
-
-    const rawText = await res.text();
-    console.log('[Blitz] HTTP:', res.status, '| Reçu (100c):', rawText.substring(0, 100));
-
-    let raw;
-    try { raw = JSON.parse(rawText); }
-    catch(e) {
-      console.error('[Blitz] JSON invalide:', rawText.substring(0, 200));
-      document.getElementById("lgt-status").textContent = "Erreur JSON /lightning";
-      return;
-    }
-
-    /* Format : { count, updated, strikes: [{lat, lon, ts}] } */
-    const allStrikes = raw.strikes || [];
-    console.log('[Blitz] Éclairs reçus du bot:', allStrikes.length);
-
-    /* Filtrer dans le rayon RAYON_KM */
-    const nearby = allStrikes
-      .map(s => ({ ...s, dist: haversine(LAT, LON, s.lat, s.lon) }))
-      .filter(s => s.dist <= RAYON_KM)
+    const now    = Date.now();
+    const nearby = lightningHistory
+      .filter(s => (now - s.ts) < 60 * 60 * 1000)
+      .map(s => ({ ...s, dist: s.dist || haversine(LAT, LON, s.lat || LAT, s.lon || LON) }))
       .sort((a,b) => a.dist - b.dist);
 
     /* Dédoublonnage dans l'historique */
