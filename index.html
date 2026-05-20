@@ -373,6 +373,18 @@ tbody tr:last-child td { border-bottom:none; }
 .snap-btn.manual { border-color: #38bdf8; color: #38bdf8; }
 .snap-recording  { animation: blink 1.2s infinite; color: #ef4444; }
 
+
+/* ===== CERCLE IMPACT ===== */
+.impact-legend {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  font-family: var(--mono); font-size: 0.75em; color: var(--muted);
+  margin-top: 8px; padding: 6px 10px;
+  background: var(--bg-inner); border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.impact-legend span { display: flex; align-items: center; gap: 5px; }
+.impact-dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+
 </style>
 </head>
 <body>
@@ -506,6 +518,12 @@ tbody tr:last-child td { border-bottom:none; }
       <div class="pixel-sub" id="px-20-sub">--</div>
     </div>
   </div>
+  <div class="impact-legend" id="impact-legend" style="display:none">
+    <span><span class="impact-dot" style="background:#ef4444"></span>Zone impact +30 min</span>
+    <span><span class="impact-dot" style="background:#f97316;opacity:0.6"></span>Zone étendue +60 min</span>
+    <span><span class="impact-dot" style="background:#eab308;opacity:0.4"></span>Zone incertaine +90 min</span>
+    <span id="impact-eta-text" style="color:var(--text)"></span>
+  </div>
   <div style="font-size:0.7em;color:var(--muted);margin-top:10px;text-align:center;" id="px-status">
     En attente de l'URL Railway...
   </div>
@@ -529,14 +547,14 @@ tbody tr:last-child td { border-bottom:none; }
 
 <!-- ===== BLOC ÉCLAIRS ===== -->
 <div class="lightning-box">
-  <div class="lightning-title">⚡ Activité électrique</div>
+  <div class="lightning-title">⚡ Activité électrique — Capteur AS3935 local</div>
 
   <!-- Compteurs AS3935 local -->
   <div class="lightning-grid">
     <div class="lightning-item"><div class="l-name">Plus proche AS3935</div><div class="l-val" id="lgt-closest">--</div><div class="l-sub" id="lgt-closest-time">capteur local</div></div>
-    <div class="lightning-item"><div class="l-name">Éclairs 10 min</div><div class="l-val" id="lgt-count10">--</div><div class="l-sub">AS3935 local</div></div>
-    <div class="lightning-item"><div class="l-name">Éclairs 30 min</div><div class="l-val" id="lgt-count30">--</div><div class="l-sub">AS3935 local</div></div>
-    <div class="lightning-item"><div class="l-name">Éclairs 60 min</div><div class="l-val" id="lgt-count60">--</div><div class="l-sub">AS3935 local</div></div>
+    <div class="lightning-item"><div class="l-name">Impacts 10 min</div><div class="l-val" id="lgt-count10">--</div><div class="l-sub">AS3935 local</div></div>
+    <div class="lightning-item"><div class="l-name">Impacts 30 min</div><div class="l-val" id="lgt-count30">--</div><div class="l-sub">AS3935 local</div></div>
+    <div class="lightning-item"><div class="l-name">Impacts 60 min</div><div class="l-val" id="lgt-count60">--</div><div class="l-sub">AS3935 local</div></div>
   </div>
   <div class="lightning-trend" id="lgt-trend">Tendance : Chargement...</div>
   <div style="font-size:0.72em; color:var(--muted); margin-top:6px;" id="lgt-status">Capteur AS3935 local</div>
@@ -1184,6 +1202,86 @@ function drawTrajectory(originLat, originLon, moveDeg, speedKmh, topoCorrection)
       })
     }).addTo(coneLayerGroup);
   });
+}
+
+
+/* ============================================================
+   CERCLE D'IMPACT PROBABLE
+   Affiche sur la carte un cercle centré sur la position estimée
+   de la cellule dans T+30, T+60, T+90 min.
+   Le rayon du cercle représente l'incertitude (±20% de la distance).
+   Basé sur : cellVector (vitesse + direction) + pixel radar.
+   ============================================================ */
+let impactLayerGroup = null; /* initialisé dans initMap */
+
+function drawImpactCircles(originLat, originLon, moveDeg, speedKmh, topoCorrection) {
+  if (!impactLayerGroup) return;
+  impactLayerGroup.clearLayers();
+
+  const legend = document.getElementById('impact-legend');
+  const etaText = document.getElementById('impact-eta-text');
+
+  if (speedKmh < 3) {
+    if (legend) legend.style.display = 'none';
+    return;
+  }
+
+  const corrDeg = (moveDeg + (topoCorrection || 0) + 360) % 360;
+
+  /* Horizons temporels */
+  const horizons = [
+    { min: 30, color: '#ef4444', opacity: 0.18, weight: 2 },
+    { min: 60, color: '#f97316', opacity: 0.10, weight: 1.5 },
+    { min: 90, color: '#eab308', opacity: 0.06, weight: 1 }
+  ];
+
+  horizons.forEach(({ min, color, opacity, weight }) => {
+    const dist = speedKmh * (min / 60);          /* km parcourus */
+    const uncert = dist * 0.25 + 10;              /* incertitude : 25% + 10 km fixe */
+    const center = destinationPoint(originLat, originLon, dist, corrDeg);
+
+    /* Cercle rempli */
+    L.circle([center[0], center[1]], {
+      radius:      uncert * 1000,                 /* m → km */
+      color:       color,
+      weight:      weight,
+      opacity:     0.7,
+      fillColor:   color,
+      fillOpacity: opacity
+    }).addTo(impactLayerGroup)
+      .bindTooltip(`Zone +${min} min — rayon ±${Math.round(uncert)} km`, { sticky: true });
+
+    /* Point central */
+    L.circleMarker([center[0], center[1]], {
+      radius: 4, color, fillColor: color, fillOpacity: 0.8, weight: 1.5
+    }).addTo(impactLayerGroup)
+      .bindTooltip(`Position estimée +${min} min`, { permanent: false });
+  });
+
+  /* ETA sur la station */
+  const distToStation = haversine(originLat, originLon, LAT, LON);
+  const bearingToSta  = ((radToDeg(Math.atan2(
+    (LON - originLon) * Math.cos(degToRad(originLat)),
+    LAT - originLat
+  )) + 360) % 360);
+  const angDiff = Math.abs(((corrDeg - bearingToSta + 540) % 360) - 180);
+
+  if (angDiff < 55 && distToStation < 150) {
+    const etaMin = Math.round((distToStation / speedKmh) * 60);
+    if (etaText) etaText.textContent = `⚡ ETA station ≈ ${etaMin} min`;
+
+    /* Cercle sur la station avec le timing */
+    L.circle([LAT, LON], {
+      radius: 8000, color: '#ef4444', weight: 2,
+      opacity: 0.9, fillColor: '#ef4444', fillOpacity: 0.12,
+      dashArray: '6 4'
+    }).addTo(impactLayerGroup)
+      .bindTooltip(`Cellule en approche — ETA ≈ ${etaMin} min`, { permanent: true, direction: 'top' });
+  } else {
+    if (etaText) etaText.textContent = 'Cellule ne vise pas la station';
+  }
+
+  if (legend) legend.style.display = 'flex';
 }
 
 /* Place les impacts d'éclairs sur la carte */
@@ -2293,6 +2391,8 @@ async function loadUpperAtmosphere() {
     document.getElementById("globalPct").textContent = globalScoreV2 + " %";
 
     /* ---- Vent cellule — toujours affiché ---- */
+    /* Cercle d'impact basé sur les vents même sans foyer Blitzortung */
+    drawImpactCircles(LAT, LON, moveDeg, avgSpeed, topoCorrection);
     document.getElementById("stormVector").textContent =
       "Vent cellule : " + avgSpeed.toFixed(1) + " km/h (" + Math.round(avgDir) + "°)";
     document.getElementById("stormArrow").textContent = arrowFromDeg(correctedMoveDeg);
@@ -2347,6 +2447,7 @@ async function loadUpperAtmosphere() {
         const oLat = strikeCentroid.hasStrikes ? strikeCentroid.lat : LAT;
         const oLon = strikeCentroid.hasStrikes ? strikeCentroid.lon : LON;
         drawTrajectory(oLat, oLon, moveDeg, avgSpeed, topoCorrection);
+        drawImpactCircles(oLat, oLon, moveDeg, avgSpeed, topoCorrection);
       } else {
         coneLayerGroup.clearLayers();
       }
